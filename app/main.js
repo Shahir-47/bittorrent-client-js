@@ -54,8 +54,6 @@ function decodeBencodeDictionary(bencodedValue) {
 				endIndex = bencodedValue.lastIndexOf("e", endIndex - 1);
 			}
 
-			console.log("array", bencodedValue.slice(currentIndex, endIndex + 1));
-
 			result[key] = decodeBencodeList(
 				bencodedValue.slice(currentIndex, endIndex + 1)
 			);
