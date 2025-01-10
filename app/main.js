@@ -26,7 +26,7 @@ function decodeBencodeList(bencodedValue) {
 			result.push(
 				decodeBencodeInt(bencodedValue.slice(currentIndex, endIndex))
 			);
-			currentIndex = endIndex + 1;
+			currentIndex = endIndex;
 		} else if (!isNaN(bencodedValue[currentIndex])) {
 			const colonIndex = bencodedValue.indexOf(":", currentIndex);
 			const stringLength = parseInt(
@@ -46,7 +46,7 @@ function decodeBencodeList(bencodedValue) {
 			}
 
 			result.push(
-				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex))
+				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex + 1))
 			);
 
 			currentIndex = endIndex + 1;
