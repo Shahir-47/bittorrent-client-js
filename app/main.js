@@ -22,6 +22,7 @@ function decodeBencode(bencodedValue) {
 function decodeBencodeList(bencodedValue) {
 	const result = [];
 	let currentIndex = 1;
+
 	while (currentIndex < bencodedValue.length - 1) {
 		const currentChar = bencodedValue[currentIndex];
 		if (currentChar === "i") {
@@ -42,9 +43,12 @@ function decodeBencodeList(bencodedValue) {
 			);
 			currentIndex = colonIndex + stringLength + 1;
 		} else if (currentChar === "l") {
-			const endIndex = bencodedValue.indexOf("e", currentIndex);
+			const endIndex = bencodedValue.indexOf("e");
+			console.log("endIndex", endIndex);
 			result.push(
-				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex + 1))
+				decodeBencodeList(
+					bencodedValue.slice(currentIndex, bencodedValue.lastIndexOf("e") + 1)
+				)
 			);
 			currentIndex = endIndex + 1;
 		} else {
