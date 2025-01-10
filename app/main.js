@@ -5,10 +5,7 @@ const util = require("util");
 // - decodeBencode("5:hello") -> "hello"
 // - decodeBencode("10:hello12345") -> "hello12345"
 function decodeBencode(bencodedValue) {
-	if (
-		bencodedValue[0] === "l" &&
-		bencodedValue[bencodedValue.length - 1] === "e"
-	) {
+	if (bencodedValue[0] === "l") {
 		return decodeBencodeList(bencodedValue);
 	} else if (!isNaN(bencodedValue[0])) {
 		return decodeBencodeString(bencodedValue);
@@ -24,14 +21,13 @@ function decodeBencodeList(bencodedValue) {
 	let currentIndex = 1;
 
 	while (currentIndex < bencodedValue.length - 1) {
-		const currentChar = bencodedValue[currentIndex];
-		if (currentChar === "i") {
-			const endIndex = bencodedValue.indexOf("e", currentIndex);
+		if (bencodedValue[currentIndex] === "i") {
+			const endIndex = bencodedValue.indexOf("e", currentIndex) + 1;
 			result.push(
-				decodeBencodeInt(bencodedValue.slice(currentIndex, endIndex + 1))
+				decodeBencodeInt(bencodedValue.slice(currentIndex, endIndex))
 			);
 			currentIndex = endIndex + 1;
-		} else if (!isNaN(currentChar)) {
+		} else if (!isNaN(bencodedValue[currentIndex])) {
 			const colonIndex = bencodedValue.indexOf(":", currentIndex);
 			const stringLength = parseInt(
 				bencodedValue.slice(currentIndex, colonIndex)
@@ -42,11 +38,17 @@ function decodeBencodeList(bencodedValue) {
 				)
 			);
 			currentIndex = colonIndex + stringLength + 1;
-		} else if (currentChar === "l") {
-			const endIndex = bencodedValue.lastIndexOf("e");
+		} else if (bencodedValue[currentIndex] === "l") {
+			let endIndex = bencodedValue.lastIndexOf("e") - 1;
+
+			while (!isNaN(bencodedValue[endIndex - 1]) && endIndex > 0) {
+				endIndex = bencodedValue.lastIndexOf("e", endIndex - 1);
+			}
+
 			result.push(
 				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex))
 			);
+
 			currentIndex = endIndex + 1;
 		} else {
 			throw new Error(
