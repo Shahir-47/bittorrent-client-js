@@ -43,12 +43,9 @@ function decodeBencodeList(bencodedValue) {
 			);
 			currentIndex = colonIndex + stringLength + 1;
 		} else if (currentChar === "l") {
-			const endIndex = bencodedValue.indexOf("e");
-			console.log("endIndex", endIndex);
+			const endIndex = bencodedValue.lastIndexOf("e");
 			result.push(
-				decodeBencodeList(
-					bencodedValue.slice(currentIndex, bencodedValue.lastIndexOf("e") + 1)
-				)
+				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex))
 			);
 			currentIndex = endIndex + 1;
 		} else {
