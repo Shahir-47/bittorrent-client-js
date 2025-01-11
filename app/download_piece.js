@@ -1,4 +1,3 @@
-// download_piece.js
 const fs = require("fs");
 const crypto = require("crypto");
 const { decodeBencode } = require("./decode_bencode");
@@ -15,28 +14,22 @@ const { readPieceMessage } = require("./peerMessage/read_piece_message");
 async function downloadPiece(torrentPath, pieceIndex, outFile) {
 	const data = fs.readFileSync(torrentPath);
 	const bencodedValue = data.toString("binary");
-	const { announce, info } = decodeBencode(bencodedValue);
+	const { info } = decodeBencode(bencodedValue);
 
 	const peers = await getPeers(data);
 	if (!peers.length) {
 		throw new Error("No peers found from tracker!");
 	}
-	console.log("Found peers:", peers);
 
-	// For now, pick the first peer from the list
-	const [peerIp, peerPort] = peers[1].split(":");
-	console.log(`Connecting to peer ${peerIp}:${peerPort}...`);
-
+	const [peerIp, peerPort] = peers[0].split(":");
 	const infoHash = calculateSHA1Hash(encodeBencode(info));
 	const myPeerId = crypto.randomBytes(20);
-	const { socket, peerIdFromPeer } = await doHandshake(
+	const { socket } = await doHandshake(
 		peerIp,
 		Number(peerPort),
 		infoHash,
 		myPeerId
 	);
-
-	console.log("Handshake complete! Peer ID is", peerIdFromPeer.toString("hex"));
 
 	try {
 		await waitForBitfield(socket);
@@ -45,37 +38,40 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 
 		const pieceLength = info["piece length"];
 		const totalLength = info.length;
-
-		// Calculate actual piece size (last piece might be smaller)
 		const actualPieceLength =
 			pieceIndex === Math.floor(totalLength / pieceLength)
 				? totalLength % pieceLength
 				: pieceLength;
 
 		const pieceBuffer = Buffer.alloc(actualPieceLength);
-		let offset = 0;
 		const BLOCK_SIZE = 16 * 1024;
+		let offset = 0;
 
+		// Pipeline 5 requests at a time
 		while (offset < actualPieceLength) {
-			const remainingBytes = actualPieceLength - offset;
-			const size = Math.min(BLOCK_SIZE, remainingBytes);
+			const promises = [];
 
-			sendRequest(socket, pieceIndex, offset, size);
-
-			const {
-				pieceIndex: pIndex,
-				begin,
-				blockData,
-			} = await readPieceMessage(socket, pieceIndex, offset);
-
-			if (pIndex !== pieceIndex || begin !== offset) {
-				throw new Error(
-					`Peer returned unexpected piece/offset: pIndex=${pIndex}, begin=${begin}`
-				);
+			// Send up to 5 requests
+			for (
+				let i = 0;
+				i < 5 && offset + i * BLOCK_SIZE < actualPieceLength;
+				i++
+			) {
+				const begin = offset + i * BLOCK_SIZE;
+				const size = Math.min(BLOCK_SIZE, actualPieceLength - begin);
+				sendRequest(socket, pieceIndex, begin, size);
+				promises.push(readPieceMessage(socket, pieceIndex, begin));
 			}
 
-			blockData.copy(pieceBuffer, offset);
-			offset += size;
+			// Wait for all responses
+			const responses = await Promise.all(promises);
+
+			// Process responses
+			for (const { blockData, begin } of responses) {
+				blockData.copy(pieceBuffer, begin);
+			}
+
+			offset += BLOCK_SIZE * promises.length;
 		}
 
 		// Verify hash
@@ -87,16 +83,13 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 		const expectedHashHex = Buffer.from(expectedHashBinary, "binary").toString(
 			"hex"
 		);
-
 		const actualHashHex = crypto
 			.createHash("sha1")
 			.update(pieceBuffer)
 			.digest("hex");
 
 		if (actualHashHex !== expectedHashHex) {
-			throw new Error(
-				`Piece #${pieceIndex} hash mismatch! Got ${actualHashHex}, expected ${expectedHashHex}`
-			);
+			throw new Error(`Piece hash mismatch`);
 		}
 
 		fs.writeFileSync(outFile, pieceBuffer);
