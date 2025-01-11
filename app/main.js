@@ -35,8 +35,8 @@ function main() {
 		const torrentPath = process.argv[3];
 		const [peerIp, peerPort] = process.argv[4].split(":");
 
-		sendHandshake(torrentPath, peerIp, peerPort).then((peerId) => {
-			console.log("Peer ID:", peerId.toString("hex"));
+		sendHandshake(torrentPath, peerIp, peerPort).then(({ peerIdFromPeer }) => {
+			console.log("Peer ID:", peerIdFromPeer.toString("hex"));
 		});
 	} else if (command === "download_piece") {
 	} else {

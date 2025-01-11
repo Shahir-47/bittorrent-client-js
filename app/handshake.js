@@ -15,8 +15,8 @@ function sendHandshake(torrentPath, peerIp, peerPort) {
 	const myPeerId = crypto.randomBytes(20);
 
 	return doHandshake(peerIp, Number(peerPort), infoHash, myPeerId)
-		.then((peerIdFromPeer) => {
-			return peerIdFromPeer;
+		.then(({ socket, peerIdFromPeer }) => {
+			return { socket, peerIdFromPeer };
 		})
 		.catch((err) => {
 			return err;
