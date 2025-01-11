@@ -156,8 +156,8 @@ function main() {
 		const bencodedValue = fs.readFileSync(process.argv[3], "utf8");
 		let { announce, info } = decodeBencode(bencodedValue);
 
-		console.log("Tracker URL: ", announce);
-		// console.log("Length: ", info.length);
+		console.log("Tracker URL:", announce);
+		console.log("Length:", info.length);
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}
