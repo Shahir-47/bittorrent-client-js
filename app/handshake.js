@@ -63,8 +63,7 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 				console.log("infoHash (hex):", infoHashFromPeer.toString("hex"));
 				console.log("peerId (hex):", peerIdFromPeer.toString("hex"));
 
-				resolve(peerIdFromPeer);
-				socket.destroy();
+				resolve({ socket, peerIdFromPeer });
 			}
 		});
 
