@@ -63,6 +63,7 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 				console.log("infoHash (hex):", infoHashFromPeer.toString("hex"));
 				console.log("peerId (hex):", peerIdFromPeer.toString("hex"));
 
+				receivedData = receivedData.slice(68);
 				resolve({ socket, peerIdFromPeer });
 			}
 		});
@@ -73,4 +74,4 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 	});
 }
 
-module.exports = { sendHandshake };
+module.exports = { sendHandshake, doHandshake };

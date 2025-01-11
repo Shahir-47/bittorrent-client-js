@@ -32,13 +32,32 @@ function main() {
 			}
 		});
 	} else if (command === "handshake") {
-		const torrentPath = process.argv[3];
 		const [peerIp, peerPort] = process.argv[4].split(":");
 
-		sendHandshake(torrentPath, peerIp, peerPort).then(({ peerIdFromPeer }) => {
-			console.log("Peer ID:", peerIdFromPeer.toString("hex"));
-		});
+		sendHandshake(process.argv[3], peerIp, peerPort).then(
+			({ peerIdFromPeer }) => {
+				console.log("Peer ID:", peerIdFromPeer.toString("hex"));
+			}
+		);
 	} else if (command === "download_piece") {
+		const outFlagIndex = process.argv.indexOf("-o");
+		if (outFlagIndex === -1) {
+			throw new Error(
+				"Must specify -o <output_file> before the .torrent file and piece index"
+			);
+		}
+
+		const outFile = process.argv[outFlagIndex + 1];
+		const torrentPath = process.argv[outFlagIndex + 2];
+		const pieceIndex = Number(process.argv[outFlagIndex + 3]);
+
+		downloadPiece(torrentPath, pieceIndex, outFile)
+			.then(() => {
+				console.log(`Downloaded piece #${pieceIndex} to ${outFile}`);
+			})
+			.catch((err) => {
+				console.error("Failed to download piece:", err);
+			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}
