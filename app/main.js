@@ -6,6 +6,7 @@ const { getInfo } = require("./info");
 const { getPeers } = require("./peers");
 const { sendHandshake } = require("./handshake");
 const { downloadPiece } = require("./download_piece");
+const { downloadComplete } = require("./download_complete");
 
 function main() {
 	const command = process.argv[2];
@@ -57,6 +58,21 @@ function main() {
 			})
 			.catch((err) => {
 				console.error("Failed to download piece:", err);
+			});
+	} else if (command === "download") {
+		const outFlagIndex = process.argv.indexOf("-o");
+		if (outFlagIndex === -1) {
+			throw new Error("Must specify -o <output_file>");
+		}
+		const outFile = process.argv[outFlagIndex + 1];
+		const torrentPath = process.argv[outFlagIndex + 2];
+
+		downloadComplete(torrentPath, outFile)
+			.then(() => {
+				console.log(`Downloaded torrent to ${outFile}`);
+			})
+			.catch((err) => {
+				console.error("Failed to download torrent:", err);
 			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
