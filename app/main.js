@@ -7,6 +7,18 @@ const crypto = require("crypto");
 // - decodeBencode("5:hello") -> "hello"
 // - decodeBencode("10:hello12345") -> "hello12345"
 
+function splitStringByBytes(str, byteLimit) {
+	const encoder = new TextEncoder();
+	const bytes = encoder.encode(str);
+	const chunks = [];
+
+	for (let i = 0; i < bytes.length; i += byteLimit) {
+		chunks.push(new TextDecoder().decode(bytes.slice(i, i + byteLimit)));
+	}
+
+	return chunks;
+}
+
 function calculateSHA1Hash(bencodedValue) {
 	const hash = crypto.createHash("sha1");
 	hash.update(bencodedValue, "binary");
@@ -206,6 +218,18 @@ function main() {
 		console.log("Tracker URL:", announce);
 		console.log("Length:", info.length);
 		console.log("Info Hash:", calculateSHA1Hash(encodeBencode(info)));
+		console.log("Piece Length:", info["piece length"]);
+		const pieceHashes = info["pieces"];
+		console.log("Piece Hashes:");
+
+		// Split the piece hashes into 20 byte chunks
+		for (let i = 0; i < pieceHashes.length; i += 20) {
+			const pieceHashBinary = pieceHashes.slice(i, i + 20);
+			const pieceHashHex = Buffer.from(pieceHashBinary, "binary").toString(
+				"hex"
+			);
+			console.log(pieceHashHex);
+		}
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}
