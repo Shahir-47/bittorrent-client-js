@@ -2,6 +2,7 @@ const process = require("process");
 const util = require("util");
 const fs = require("fs");
 const crypto = require("crypto");
+const net = require("net");
 
 // Examples:
 // - decodeBencode("5:hello") -> "hello"
@@ -14,6 +15,57 @@ function urlEncodeBytes(buf) {
 		out += "%" + byte.toString(16).padStart(2, "0");
 	}
 	return out;
+}
+
+function buildHandshake(infoHashBuffer, myPeerIdBuffer) {
+	const handshake = Buffer.alloc(68);
+
+	handshake.writeUInt8(19, 0);
+	handshake.write("BitTorrent protocol", 1, 19, "ascii");
+	infoHashBuffer.copy(handshake, 28);
+	myPeerIdBuffer.copy(handshake, 48);
+
+	return handshake;
+}
+
+function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
+	return new Promise((resolve, reject) => {
+		const socket = net.createConnection(
+			{ host: peerIp, port: peerPort },
+			() => {
+				console.log("Connected to peer:", peerIp, peerPort);
+				const handshakeMsg = buildHandshake(infoHash, myPeerId);
+				socket.write(handshakeMsg);
+			}
+		);
+
+		let receivedData = Buffer.alloc(0);
+
+		socket.on("data", (chunk) => {
+			receivedData = Buffer.concat([receivedData, chunk]);
+
+			if (receivedData.length >= 68) {
+				const peerHandshake = receivedData.slice(0, 68);
+
+				const pstrlen = peerHandshake.readUInt8(0);
+				const pstr = peerHandshake.slice(1, 1 + pstrlen).toString("ascii");
+				const infoHashFromPeer = peerHandshake.slice(28, 48);
+				const peerIdFromPeer = peerHandshake.slice(48, 68);
+
+				console.log("Got handshake from peer!");
+				console.log("pstrlen:", pstrlen, "pstr:", pstr);
+				console.log("infoHash (hex):", infoHashFromPeer.toString("hex"));
+				console.log("peerId (hex):", peerIdFromPeer.toString("hex"));
+
+				resolve(peerIdFromPeer);
+				socket.destroy();
+			}
+		});
+
+		socket.on("error", (err) => {
+			reject(err);
+		});
+	});
 }
 
 function parsePeers(peersBinary) {
@@ -262,7 +314,7 @@ function main() {
 		else trackerUrl += "&";
 
 		trackerUrl += `info_hash=${infoHashEncoded}`;
-		trackerUrl += `&peer_id=-SS1000-abcdefgh1234`; // must be 20 bytes
+		trackerUrl += `&peer_id=-SS1000-abcdefgh1234`;
 		trackerUrl += `&port=6881`;
 		trackerUrl += `&uploaded=0`;
 		trackerUrl += `&downloaded=0`;
@@ -285,6 +337,24 @@ function main() {
 			})
 			.catch((err) => {
 				console.error("Failed to contact tracker:", err);
+			});
+	} else if (command === "handshake") {
+		const torrentPath = process.argv[3];
+		const [peerIp, peerPort] = process.argv[4].split(":");
+
+		const data = fs.readFileSync(torrentPath);
+		const bencodedValue = data.toString("binary");
+		const { info } = decodeBencode(bencodedValue);
+
+		const infoHash = calculateSHA1Hash(encodeBencode(info));
+		const myPeerId = crypto.randomBytes(20);
+
+		doHandshake(peerIp, Number(peerPort), infoHash, myPeerId)
+			.then((peerIdFromPeer) => {
+				console.log("Peer ID:", peerIdFromPeer.toString("hex"));
+			})
+			.catch((err) => {
+				console.error("Handshake failed:", err);
 			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
