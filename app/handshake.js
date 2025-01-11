@@ -47,7 +47,7 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 
 		let receivedData = Buffer.alloc(0);
 
-		socket.on("data", (chunk) => {
+		function onData(chunk) {
 			receivedData = Buffer.concat([receivedData, chunk]);
 
 			if (receivedData.length >= 68) {
@@ -64,13 +64,24 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 				console.log("peerId (hex):", peerIdFromPeer.toString("hex"));
 
 				receivedData = receivedData.slice(68);
+				cleanup();
+
 				resolve({ socket, peerIdFromPeer });
 			}
-		});
+		}
 
-		socket.on("error", (err) => {
+		function onError(err) {
+			cleanup();
 			reject(err);
-		});
+		}
+
+		function cleanup() {
+			socket.removeListener("data", onData);
+			socket.removeListener("error", onError);
+		}
+
+		socket.on("data", onData);
+		socket.on("error", onError);
 	});
 }
 

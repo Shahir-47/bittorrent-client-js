@@ -7,6 +7,10 @@ const { calculateSHA1Hash } = require("./utility");
 const { doHandshake } = require("./handshake");
 const { getPeers } = require("./peers");
 const { waitForBitfield } = require("./peerMessage/wait_for_bitfield");
+const { sendInterested } = require("./peerMessage/send_interested");
+const { waitForUnchoke } = require("./peerMessage/wait_for_unchoke");
+const { sendRequest } = require("./peerMessage/send_request");
+const { readPieceMessage } = require("./peerMessage/read_piece_message");
 
 async function downloadPiece(torrentPath, pieceIndex, outFile) {
 	const data = fs.readFileSync(torrentPath);
@@ -20,7 +24,7 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 	console.log("Found peers:", peers);
 
 	// For now, pick the first peer from the list
-	const [peerIp, peerPort] = peers[0].split(":");
+	const [peerIp, peerPort] = peers[1].split(":");
 	console.log(`Connecting to peer ${peerIp}:${peerPort}...`);
 
 	const infoHash = calculateSHA1Hash(encodeBencode(info));
@@ -34,16 +38,72 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 
 	console.log("Handshake complete! Peer ID is", peerIdFromPeer.toString("hex"));
 
-	await waitForBitfield(socket);
+	try {
+		await waitForBitfield(socket);
+		await sendInterested(socket);
+		await waitForUnchoke(socket);
 
-	console.log(
-		"Got bitfield. Next steps: send 'interested', wait 'unchoke', etc."
-	);
+		const pieceLength = info["piece length"];
+		const totalLength = info.length;
 
-	// TODO
+		// Calculate actual piece size (last piece might be smaller)
+		const actualPieceLength =
+			pieceIndex === Math.floor(totalLength / pieceLength)
+				? totalLength % pieceLength
+				: pieceLength;
 
-	fs.writeFileSync(outFile, "dummy data");
-	console.log(`Wrote piece #${pieceIndex} to ${outFile}`);
+		const pieceBuffer = Buffer.alloc(actualPieceLength);
+		let offset = 0;
+		const BLOCK_SIZE = 16 * 1024;
+
+		while (offset < actualPieceLength) {
+			const remainingBytes = actualPieceLength - offset;
+			const size = Math.min(BLOCK_SIZE, remainingBytes);
+
+			sendRequest(socket, pieceIndex, offset, size);
+
+			const {
+				pieceIndex: pIndex,
+				begin,
+				blockData,
+			} = await readPieceMessage(socket, pieceIndex, offset);
+
+			if (pIndex !== pieceIndex || begin !== offset) {
+				throw new Error(
+					`Peer returned unexpected piece/offset: pIndex=${pIndex}, begin=${begin}`
+				);
+			}
+
+			blockData.copy(pieceBuffer, offset);
+			offset += size;
+		}
+
+		// Verify hash
+		const pieceHashes = info.pieces;
+		const expectedHashBinary = pieceHashes.slice(
+			pieceIndex * 20,
+			pieceIndex * 20 + 20
+		);
+		const expectedHashHex = Buffer.from(expectedHashBinary, "binary").toString(
+			"hex"
+		);
+
+		const actualHashHex = crypto
+			.createHash("sha1")
+			.update(pieceBuffer)
+			.digest("hex");
+
+		if (actualHashHex !== expectedHashHex) {
+			throw new Error(
+				`Piece #${pieceIndex} hash mismatch! Got ${actualHashHex}, expected ${expectedHashHex}`
+			);
+		}
+
+		fs.writeFileSync(outFile, pieceBuffer);
+	} finally {
+		socket.end();
+		socket.destroy();
+	}
 }
 
 module.exports = { downloadPiece };
