@@ -9,7 +9,7 @@ const crypto = require("crypto");
 
 function calculateSHA1Hash(bencodedValue) {
 	const hash = crypto.createHash("sha1");
-	hash.update(bencodedValue, "utf8");
+	hash.update(bencodedValue, "binary");
 	return hash.digest("hex");
 }
 
@@ -27,6 +27,7 @@ function encodeBencodeList(value) {
 
 function encodeBencodeDictionary(value) {
 	let result = "d";
+	const keys = Object.keys(value).sort();
 
 	for (let key in value) {
 		result += encodeBencodeString(key);
@@ -198,7 +199,8 @@ function main() {
 
 		console.log(JSON.stringify(decodeBencode(bencodedValue)));
 	} else if (command === "info") {
-		const bencodedValue = fs.readFileSync(process.argv[3], "utf8");
+		const data = fs.readFileSync(process.argv[3]);
+		const bencodedValue = data.toString("binary");
 		let { announce, info } = decodeBencode(bencodedValue);
 
 		console.log("Tracker URL:", announce);
