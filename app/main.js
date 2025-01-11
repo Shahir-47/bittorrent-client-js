@@ -7,22 +7,39 @@ const crypto = require("crypto");
 // - decodeBencode("5:hello") -> "hello"
 // - decodeBencode("10:hello12345") -> "hello12345"
 
-function splitStringByBytes(str, byteLimit) {
-	const encoder = new TextEncoder();
-	const bytes = encoder.encode(str);
-	const chunks = [];
-
-	for (let i = 0; i < bytes.length; i += byteLimit) {
-		chunks.push(new TextDecoder().decode(bytes.slice(i, i + byteLimit)));
+function urlEncodeBytes(buf) {
+	let out = "";
+	for (const byte of buf) {
+		// Each byte -> %xx format
+		out += "%" + byte.toString(16).padStart(2, "0");
 	}
-
-	return chunks;
+	return out;
 }
 
-function calculateSHA1Hash(bencodedValue) {
+function parsePeers(peersBinary) {
+	const peers = [];
+	for (let i = 0; i < peersBinary.length; i += 6) {
+		const ipBytes = peersBinary.slice(i, i + 4);
+		const portBytes = peersBinary.slice(i + 4, i + 6);
+
+		const ip = [
+			ipBytes.charCodeAt(0),
+			ipBytes.charCodeAt(1),
+			ipBytes.charCodeAt(2),
+			ipBytes.charCodeAt(3),
+		].join(".");
+
+		const port = (portBytes.charCodeAt(0) << 8) + portBytes.charCodeAt(1);
+
+		peers.push(`${ip}:${port}`);
+	}
+	return peers;
+}
+
+function calculateSHA1Hash(bencodedValue, encoding = "binary") {
 	const hash = crypto.createHash("sha1");
 	hash.update(bencodedValue, "binary");
-	return hash.digest("hex");
+	return encoding === "binary" ? hash.digest() : hash.digest(encoding);
 }
 
 function encodeBencodeString(value) {
@@ -217,7 +234,7 @@ function main() {
 
 		console.log("Tracker URL:", announce);
 		console.log("Length:", info.length);
-		console.log("Info Hash:", calculateSHA1Hash(encodeBencode(info)));
+		console.log("Info Hash:", calculateSHA1Hash(encodeBencode(info), "hex"));
 		console.log("Piece Length:", info["piece length"]);
 		const pieceHashes = info["pieces"];
 		console.log("Piece Hashes:");
@@ -230,6 +247,45 @@ function main() {
 			);
 			console.log(pieceHashHex);
 		}
+	} else if (command === "peers") {
+		const data = fs.readFileSync(process.argv[3]);
+		const bencodedValue = data.toString("binary");
+		let { announce, info } = decodeBencode(bencodedValue);
+
+		const infoHashRaw = calculateSHA1Hash(encodeBencode(info));
+		const infoHashEncoded = urlEncodeBytes(infoHashRaw);
+		const peerId = "-SS1000-123456789ABC";
+		const left = info.length;
+
+		let trackerUrl = announce;
+		if (!trackerUrl.includes("?")) trackerUrl += "?";
+		else trackerUrl += "&";
+
+		trackerUrl += `info_hash=${infoHashEncoded}`;
+		trackerUrl += `&peer_id=-SS1000-abcdefgh1234`; // must be 20 bytes
+		trackerUrl += `&port=6881`;
+		trackerUrl += `&uploaded=0`;
+		trackerUrl += `&downloaded=0`;
+		trackerUrl += `&left=${info.length}`;
+		trackerUrl += `&compact=1`;
+
+		fetch(trackerUrl)
+			.then((res) => res.arrayBuffer())
+			.then((buf) => {
+				const responseBinary = Buffer.from(buf).toString("binary");
+				const trackerResponse = decodeBencode(responseBinary);
+
+				const interval = trackerResponse.interval;
+				const peersBinary = trackerResponse.peers;
+
+				const peers = parsePeers(peersBinary);
+				peers.forEach((peer) => {
+					console.log(`${peer}`);
+				});
+			})
+			.catch((err) => {
+				console.error("Failed to contact tracker:", err);
+			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}
