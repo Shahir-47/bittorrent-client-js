@@ -5,6 +5,7 @@ const { decodeBencode } = require("./decode_bencode");
 const { getInfo } = require("./info");
 const { getPeers } = require("./peers");
 const { sendHandshake } = require("./handshake");
+const { downloadPiece } = require("./download_piece");
 
 function main() {
 	const command = process.argv[2];
