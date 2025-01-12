@@ -71,6 +71,24 @@ function parseMessage(buffer) {
 	};
 }
 
+function parseExtensionHandshake(message) {
+	// Extension message starts after the 6-byte header
+	// (4 bytes length prefix + 1 byte msg type + 1 byte extension ID)
+	const payload = message.slice(6);
+	const handshakeData = decodeBencode(payload.toString("binary"));
+
+	// Extracting the ut_metadata ID from the extension message
+	if (
+		handshakeData &&
+		handshakeData.m &&
+		typeof handshakeData.m.ut_metadata === "number"
+	) {
+		return handshakeData.m.ut_metadata;
+	}
+
+	throw new Error("Invalid extension handshake format");
+}
+
 async function performPeerHandshake(peer, infoHash, myPeerId) {
 	return new Promise((resolve, reject) => {
 		const socket = new net.Socket();
@@ -78,6 +96,7 @@ async function performPeerHandshake(peer, infoHash, myPeerId) {
 		let bitfieldReceived = false;
 		let extensionHandshakeReceived = false;
 		let receivedPeerId = null;
+		let metadataExtensionId = null;
 		let dataBuffer = Buffer.alloc(0);
 
 		const timeout = setTimeout(() => {
@@ -121,12 +140,17 @@ async function performPeerHandshake(peer, infoHash, myPeerId) {
 					const extensionHandshake = createExtensionHandshake();
 					socket.write(extensionHandshake);
 				} else if (!extensionHandshakeReceived) {
-					// Next message should be extension handshake
-					extensionHandshakeReceived = true;
-					// Now we can complete the process
-					clearTimeout(timeout);
-					socket.destroy();
-					resolve(receivedPeerId);
+					try {
+						metadataExtensionId = parseExtensionHandshake(message.message);
+						extensionHandshakeReceived = true;
+						clearTimeout(timeout);
+						socket.destroy();
+						resolve({ receivedPeerId, metadataExtensionId });
+					} catch (error) {
+						reject(
+							new Error(`Failed to parse extension handshake: ${error.message}`)
+						);
+					}
 				}
 			}
 		});
@@ -171,14 +195,16 @@ async function performMagnetHandshake(magnetLink) {
 			throw new Error("No valid peers found");
 		}
 
-		const receivedPeerId = await performPeerHandshake(
+		const { receivedPeerId, metadataExtensionId } = await performPeerHandshake(
 			peers[0],
 			parsedMagnet.infoHash,
 			peerId
 		);
 
 		console.log(`Peer ID: ${receivedPeerId}`);
-		return receivedPeerId;
+		console.log(`Peer Metadata Extension ID: ${metadataExtensionId}`);
+
+		return { receivedPeerId, metadataExtensionId };
 	} catch (error) {
 		throw new Error(`Handshake failed: ${error.message}`);
 	}
