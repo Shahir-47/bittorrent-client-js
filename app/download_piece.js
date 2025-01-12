@@ -21,7 +21,7 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 		throw new Error("No peers found from tracker!");
 	}
 
-	const [peerIp, peerPort] = peers[1].split(":");
+	const [peerIp, peerPort] = peers[2].split(":");
 	const infoHash = calculateSHA1Hash(encodeBencode(info));
 	const myPeerId = crypto.randomBytes(20);
 	const { socket } = await doHandshake(
