@@ -12,30 +12,65 @@ const { sendRequest } = require("./peerMessage/send_request");
 const { readPieceMessage } = require("./peerMessage/read_piece_message");
 
 async function downloadPiece(torrentPath, pieceIndex, outFile) {
+	// Read and parse torrent file
 	const data = fs.readFileSync(torrentPath);
 	const bencodedValue = data.toString("binary");
 	const { info } = decodeBencode(bencodedValue);
 
+	// Connect to peer
 	const peers = await getPeers(data);
 	if (!peers.length) {
 		throw new Error("No peers found from tracker!");
 	}
 
-	const [peerIp, peerPort] = peers[2].split(":");
-	const infoHash = calculateSHA1Hash(encodeBencode(info));
-	const myPeerId = crypto.randomBytes(20);
-	const { socket } = await doHandshake(
-		peerIp,
-		Number(peerPort),
-		infoHash,
-		myPeerId
-	);
+	// Try multiple peers if needed
+	let socket;
+	for (let i = 0; i < Math.min(3, peers.length); i++) {
+		const [peerIp, peerPort] = peers[i].split(":");
+		const infoHash = calculateSHA1Hash(encodeBencode(info));
+		const myPeerId = crypto.randomBytes(20);
+
+		try {
+			const result = await doHandshake(
+				peerIp,
+				Number(peerPort),
+				infoHash,
+				myPeerId
+			);
+			socket = result.socket;
+			break;
+		} catch (error) {
+			console.error(`Failed to connect to peer ${i}:`, error.message);
+			continue;
+		}
+	}
+
+	if (!socket) {
+		throw new Error("Failed to connect to any peers");
+	}
 
 	try {
-		await waitForBitfield(socket);
-		await sendInterested(socket);
-		await waitForUnchoke(socket);
+		// Set socket timeout
+		socket.setTimeout(8000); // 8 second timeout
 
+		// Initial handshake sequence
+		await Promise.race([
+			waitForBitfield(socket),
+			new Promise((_, reject) =>
+				setTimeout(() => reject(new Error("Bitfield timeout")), 2000)
+			),
+		]);
+
+		await sendInterested(socket);
+
+		await Promise.race([
+			waitForUnchoke(socket),
+			new Promise((_, reject) =>
+				setTimeout(() => reject(new Error("Unchoke timeout")), 2000)
+			),
+		]);
+
+		// Calculate piece parameters
 		const pieceLength = info["piece length"];
 		const totalLength = info.length;
 		const actualPieceLength =
@@ -45,33 +80,50 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 
 		const pieceBuffer = Buffer.alloc(actualPieceLength);
 		const BLOCK_SIZE = 16 * 1024;
-		let offset = 0;
+		const PIPELINE_SIZE = 5;
 
-		// Pipeline 5 requests at a time
-		while (offset < actualPieceLength) {
-			const promises = [];
+		// Create blocks array
+		const blocks = [];
+		for (let offset = 0; offset < actualPieceLength; offset += BLOCK_SIZE) {
+			blocks.push({
+				offset,
+				size: Math.min(BLOCK_SIZE, actualPieceLength - offset),
+			});
+		}
 
-			// Send up to 5 requests
-			for (
-				let i = 0;
-				i < 5 && offset + i * BLOCK_SIZE < actualPieceLength;
-				i++
+		// Download blocks with retries
+		let completedBlocks = 0;
+		while (completedBlocks < blocks.length) {
+			const activeRequests = [];
+
+			// Fill the pipeline
+			while (
+				activeRequests.length < PIPELINE_SIZE &&
+				completedBlocks + activeRequests.length < blocks.length
 			) {
-				const begin = offset + i * BLOCK_SIZE;
-				const size = Math.min(BLOCK_SIZE, actualPieceLength - begin);
-				sendRequest(socket, pieceIndex, begin, size);
-				promises.push(readPieceMessage(socket, pieceIndex, begin));
+				const block = blocks[completedBlocks + activeRequests.length];
+				sendRequest(socket, pieceIndex, block.offset, block.size);
+
+				const requestPromise = Promise.race([
+					readPieceMessage(socket, pieceIndex, block.offset),
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error("Block timeout")), 2000)
+					),
+				]).then((response) => {
+					response.blockData.copy(pieceBuffer, response.begin);
+					return response;
+				});
+
+				activeRequests.push(requestPromise);
 			}
 
-			// Wait for all responses
-			const responses = await Promise.all(promises);
-
-			// Process responses
-			for (const { blockData, begin } of responses) {
-				blockData.copy(pieceBuffer, begin);
+			try {
+				await Promise.all(activeRequests);
+				completedBlocks += activeRequests.length;
+			} catch (error) {
+				// retry the failed blocks in the next iteration
+				console.error("Block download failed, retrying:", error.message);
 			}
-
-			offset += BLOCK_SIZE * promises.length;
 		}
 
 		// Verify hash
@@ -89,7 +141,7 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 			.digest("hex");
 
 		if (actualHashHex !== expectedHashHex) {
-			throw new Error(`Piece hash mismatch`);
+			throw new Error("Piece hash mismatch");
 		}
 
 		fs.writeFileSync(outFile, pieceBuffer);

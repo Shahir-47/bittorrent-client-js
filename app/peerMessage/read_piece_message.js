@@ -1,30 +1,34 @@
-// read_piece_message.js
 function readPieceMessage(socket, expectedPieceIndex, expectedOffset) {
 	return new Promise((resolve, reject) => {
 		let buffer = Buffer.alloc(0);
-		let foundBlock = false;
+		let messageTimeout;
 
-		socket.on("data", onData);
-		socket.on("error", onError);
+		function resetTimeout() {
+			if (messageTimeout) clearTimeout(messageTimeout);
+			messageTimeout = setTimeout(() => {
+				cleanup();
+				reject(new Error("Piece message timeout"));
+			}, 2000);
+		}
+
+		resetTimeout();
 
 		function onData(chunk) {
 			buffer = Buffer.concat([buffer, chunk]);
+			resetTimeout();
 
 			while (buffer.length >= 4) {
 				const msgLength = buffer.readUInt32BE(0);
 
-				// keep-alive
+				// Handle keep-alive
 				if (msgLength === 0) {
 					buffer = buffer.slice(4);
 					continue;
 				}
 
-				// If we don't yet have enough data for the whole message, wait for more
-				if (buffer.length < 4 + msgLength) {
-					return;
-				}
+				// Wait for complete message
+				if (buffer.length < 4 + msgLength) break;
 
-				// We have a full message
 				const msg = buffer.slice(4, 4 + msgLength);
 				buffer = buffer.slice(4 + msgLength);
 
@@ -34,18 +38,12 @@ function readPieceMessage(socket, expectedPieceIndex, expectedOffset) {
 					// piece message
 					const pieceIndex = msg.readUInt32BE(1);
 					const begin = msg.readUInt32BE(5);
-					const blockData = msg.slice(9);
 
-					// If this is the piece/offset, resolve
 					if (pieceIndex === expectedPieceIndex && begin === expectedOffset) {
-						foundBlock = true;
+						const blockData = msg.slice(9);
 						cleanup();
 						return resolve({ pieceIndex, begin, blockData });
-					} else {
-						// keep parsing the next message in the buffer
-						continue;
 					}
-				} else {
 				}
 			}
 		}
@@ -56,9 +54,13 @@ function readPieceMessage(socket, expectedPieceIndex, expectedOffset) {
 		}
 
 		function cleanup() {
+			if (messageTimeout) clearTimeout(messageTimeout);
 			socket.removeListener("data", onData);
 			socket.removeListener("error", onError);
 		}
+
+		socket.on("data", onData);
+		socket.on("error", onError);
 	});
 }
 
