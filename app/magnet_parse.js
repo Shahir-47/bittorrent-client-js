@@ -6,7 +6,7 @@ function magnetParse(magnetLink) {
 	const params = new URLSearchParams(magnetLink.slice(8));
 	const infoHash = params.get("xt")?.split(":")?.pop();
 	const name = params.get("dn");
-	const trackerURL = params.getAll("tr");
+	const trackerURL = params.get("tr");
 
 	return { infoHash, name, trackerURL };
 }
