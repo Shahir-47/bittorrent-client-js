@@ -27,17 +27,22 @@ function createHandshakeMessage(infoHash, peerId) {
 function createExtensionHandshake() {
 	const extensionData = {
 		m: {
-			ut_metadata: 1,
+			ut_metadata: 1, // Using 1 as our extension ID
 		},
 	};
 
 	const bencodedData = encodeBencode(extensionData);
-	const messageLength = 4 + 1 + 1 + bencodedData.length;
-	const buffer = Buffer.alloc(messageLength);
+	const messageLength = 2 + bencodedData.length; // 1 byte for ext message type + 1 byte for handshake type
 
-	buffer.writeUInt32BE(1 + 1 + bencodedData.length, 0);
-	buffer.writeUInt8(20, 4); // Extension message type
-	buffer.writeUInt8(0, 5); // Handshake type
+	const buffer = Buffer.alloc(4 + messageLength);
+
+	// Write total message length (excluding length prefix)
+	buffer.writeUInt32BE(messageLength, 0);
+	// Extension message type (20)
+	buffer.writeUInt8(20, 4);
+	// Handshake type (0)
+	buffer.writeUInt8(0, 5);
+	// Write the bencoded dictionary
 	Buffer.from(bencodedData).copy(buffer, 6);
 
 	return buffer;
@@ -72,21 +77,25 @@ function parseMessage(buffer) {
 }
 
 function parseExtensionHandshake(message) {
-	// Extension message starts after the 6-byte header
-	// (4 bytes length prefix + 1 byte msg type + 1 byte extension ID)
-	const payload = message.slice(6);
-	const handshakeData = decodeBencode(payload.toString("binary"));
+	try {
+		// Skip the message header (4 bytes length prefix + 1 byte msg type + 1 byte ext msg type)
+		const payload = message.slice(6);
+		const binaryStr = payload.toString("binary");
+		const handshakeData = decodeBencode(binaryStr);
 
-	// Extracting the ut_metadata ID from the extension message
-	if (
-		handshakeData &&
-		handshakeData.m &&
-		typeof handshakeData.m.ut_metadata === "number"
-	) {
+		if (
+			!handshakeData ||
+			!handshakeData.m ||
+			typeof handshakeData.m.ut_metadata !== "number"
+		) {
+			throw new Error("Missing or invalid ut_metadata ID");
+		}
+
 		return handshakeData.m.ut_metadata;
+	} catch (error) {
+		console.error("Failed to parse extension handshake:", error);
+		throw error;
 	}
-
-	throw new Error("Invalid extension handshake format");
 }
 
 async function performPeerHandshake(peer, infoHash, myPeerId) {
@@ -98,58 +107,104 @@ async function performPeerHandshake(peer, infoHash, myPeerId) {
 		let receivedPeerId = null;
 		let metadataExtensionId = null;
 		let dataBuffer = Buffer.alloc(0);
+		let supportsExtensions = false;
+		let handshakeCompleted = false;
 
 		const timeout = setTimeout(() => {
-			socket.destroy();
+			if (!socket.destroyed) {
+				socket.destroy();
+			}
 			reject(new Error("Handshake timeout"));
-		}, 5000);
+		}, 10000);
 
 		socket.on("error", (err) => {
+			console.error("Socket error:", err.message);
 			clearTimeout(timeout);
-			socket.destroy();
-			reject(err);
+			if (!socket.destroyed) {
+				socket.destroy();
+			}
+			if (!handshakeCompleted) {
+				reject(err);
+			}
+		});
+
+		socket.on("close", () => {
+			console.log("Socket closed");
+			clearTimeout(timeout);
+			if (!handshakeCompleted) {
+				reject(new Error("Connection closed before handshake completion"));
+			}
 		});
 
 		socket.connect(peer.port, peer.ip, () => {
+			console.log("Connected to peer");
 			const handshakeMsg = createHandshakeMessage(infoHash, myPeerId);
 			socket.write(handshakeMsg);
 		});
 
 		socket.on("data", (data) => {
+			if (handshakeCompleted) return; // Ignore data after completion
+
 			dataBuffer = Buffer.concat([dataBuffer, data]);
 
 			// Handle initial handshake
 			if (!handshakeReceived && dataBuffer.length >= 68) {
+				console.log("Received initial handshake");
+				supportsExtensions = !!(dataBuffer[25] & 0x10);
 				receivedPeerId = dataBuffer.slice(48, 68).toString("hex");
 				handshakeReceived = true;
 				dataBuffer = dataBuffer.slice(68);
-				return;
+
+				if (!supportsExtensions) {
+					console.log("Peer doesn't support extensions");
+					clearTimeout(timeout);
+					socket.destroy();
+					reject(new Error("Peer doesn't support extensions"));
+					return;
+				}
 			}
 
 			// Process subsequent messages
 			while (dataBuffer.length >= 4) {
-				const message = parseMessage(dataBuffer);
-				if (!message) break;
+				const messageLength = dataBuffer.readUInt32BE(0);
+				if (dataBuffer.length < messageLength + 4) break;
 
-				dataBuffer = message.remaining;
+				const message = {
+					length: messageLength,
+					message: dataBuffer.slice(0, messageLength + 4),
+				};
+				dataBuffer = dataBuffer.slice(messageLength + 4);
 
 				if (!bitfieldReceived) {
-					// First message after handshake is bitfield
+					console.log("Received bitfield message");
 					bitfieldReceived = true;
-					// Send our extension handshake
 					const extensionHandshake = createExtensionHandshake();
 					socket.write(extensionHandshake);
-				} else if (!extensionHandshakeReceived) {
-					try {
-						metadataExtensionId = parseExtensionHandshake(message.message);
-						extensionHandshakeReceived = true;
-						clearTimeout(timeout);
-						socket.destroy();
-						resolve({ receivedPeerId, metadataExtensionId });
-					} catch (error) {
-						reject(
-							new Error(`Failed to parse extension handshake: ${error.message}`)
-						);
+					console.log("Sent extension handshake");
+				} else if (!extensionHandshakeReceived && message.length > 0) {
+					if (message.message[4] === 20) {
+						try {
+							console.log("Received extension handshake response");
+							metadataExtensionId = parseExtensionHandshake(message.message);
+							extensionHandshakeReceived = true;
+							handshakeCompleted = true;
+
+							clearTimeout(timeout);
+							resolve({ receivedPeerId, metadataExtensionId });
+
+							socket.end(() => {
+								console.log("Socket ended cleanly");
+								socket.destroy();
+							});
+						} catch (error) {
+							console.error("Failed to parse extension handshake:", error);
+							socket.destroy();
+							reject(
+								new Error(
+									`Failed to parse extension handshake: ${error.message}`
+								)
+							);
+						}
 					}
 				}
 			}

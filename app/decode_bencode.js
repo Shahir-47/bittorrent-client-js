@@ -1,139 +1,95 @@
 function decodeBencode(bencodedValue) {
-	if (bencodedValue[0] === "l") {
-		return decodeBencodeList(bencodedValue);
-	} else if (bencodedValue[0] === "d") {
-		return decodeBencodeDictionary(bencodedValue);
-	} else if (!isNaN(bencodedValue[0])) {
-		return decodeBencodeString(bencodedValue);
-	} else if (bencodedValue[0] === "i") {
-		return decodeBencodeInt(bencodedValue);
-	} else {
-		throw new Error("Only strings are supported at the moment");
-	}
-}
+	// Keep track of our current position in the string
+	let pos = 0;
 
-function decodeBencodeDictionary(bencodedValue) {
-	const result = {};
-	let currentIndex = 1;
-
-	while (currentIndex < bencodedValue.length - 1) {
-		const colonIndex = bencodedValue.indexOf(":", currentIndex);
-		const stringLength = parseInt(
-			bencodedValue.slice(currentIndex, colonIndex)
-		);
-		const key = decodeBencodeString(
-			bencodedValue.slice(colonIndex, colonIndex + stringLength + 1)
-		);
-		currentIndex = colonIndex + stringLength + 1;
-
-		if (bencodedValue[currentIndex] === "i") {
-			const endIndex = bencodedValue.indexOf("e", currentIndex) + 1;
-			result[key] = decodeBencodeInt(
-				bencodedValue.slice(currentIndex, endIndex)
-			);
-			currentIndex = endIndex;
-		} else if (!isNaN(bencodedValue[currentIndex])) {
-			const colonIndex = bencodedValue.indexOf(":", currentIndex);
-			const stringLength = parseInt(
-				bencodedValue.slice(currentIndex, colonIndex)
-			);
-			result[key] = decodeBencodeString(
-				bencodedValue.slice(colonIndex, colonIndex + stringLength + 1)
-			);
-			currentIndex = colonIndex + stringLength + 1;
-		} else if (bencodedValue[currentIndex] === "l") {
-			let endIndex = bencodedValue.lastIndexOf("e") - 1;
-
-			while (!isNaN(bencodedValue[endIndex - 1]) && endIndex > 0) {
-				endIndex = bencodedValue.lastIndexOf("e", endIndex - 1);
-			}
-
-			result[key] = decodeBencodeList(
-				bencodedValue.slice(currentIndex, endIndex + 1)
-			);
-
-			currentIndex = endIndex + 1;
-		} else if (bencodedValue[currentIndex] === "d") {
-			let endIndex = bencodedValue.lastIndexOf("e") - 1;
-
-			while (!isNaN(bencodedValue[endIndex - 1]) && endIndex > 0) {
-				endIndex = bencodedValue.lastIndexOf("e", endIndex - 1);
-			}
-
-			result[key] = decodeBencodeDictionary(
-				bencodedValue.slice(currentIndex, endIndex + 1)
-			);
-
-			currentIndex = endIndex + 1;
-		} else {
-			throw new Error(
-				"Only integers, strings and lists are supported at the moment"
-			);
+	function decodeNext() {
+		if (pos >= bencodedValue.length) {
+			throw new Error("Unexpected end of input");
 		}
+
+		const currentChar = bencodedValue[pos];
+
+		if (currentChar === "i") {
+			// Integer
+			pos++; // Move past 'i'
+			const start = pos;
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				pos++;
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated integer");
+			}
+			const num = parseInt(bencodedValue.slice(start, pos));
+			pos++; // Move past 'e'
+			return num;
+		}
+
+		if (currentChar === "l") {
+			// List
+			pos++; // Move past 'l'
+			const list = [];
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				list.push(decodeNext());
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated list");
+			}
+			pos++; // Move past 'e'
+			return list;
+		}
+
+		if (currentChar === "d") {
+			// Dictionary
+			pos++; // Move past 'd'
+			const dict = {};
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				// Dictionary keys must be strings
+				if (isNaN(bencodedValue[pos])) {
+					throw new Error("Dictionary key must be a string");
+				}
+				const key = decodeNext();
+				if (typeof key !== "string") {
+					throw new Error("Dictionary key must be a string");
+				}
+				dict[key] = decodeNext();
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated dictionary");
+			}
+			pos++; // Move past 'e'
+			return dict;
+		}
+
+		if (!isNaN(currentChar)) {
+			// String
+			const colonPos = bencodedValue.indexOf(":", pos);
+			if (colonPos === -1) {
+				throw new Error("Invalid string: no length delimiter");
+			}
+			const length = parseInt(bencodedValue.slice(pos, colonPos));
+			if (isNaN(length)) {
+				throw new Error("Invalid string length");
+			}
+			pos = colonPos + 1; // Move past ':'
+			const endPos = pos + length;
+			if (endPos > bencodedValue.length) {
+				throw new Error("String longer than remaining input");
+			}
+			const str = bencodedValue.slice(pos, endPos);
+			pos = endPos;
+			return str;
+		}
+
+		throw new Error(
+			`Invalid input character at position ${pos}: ${currentChar}`
+		);
+	}
+
+	const result = decodeNext();
+	if (pos !== bencodedValue.length) {
+		throw new Error("Trailing data after value");
 	}
 	return result;
-}
-
-function decodeBencodeList(bencodedValue) {
-	const result = [];
-	let currentIndex = 1;
-
-	while (currentIndex < bencodedValue.length - 1) {
-		if (bencodedValue[currentIndex] === "i") {
-			const endIndex = bencodedValue.indexOf("e", currentIndex) + 1;
-			result.push(
-				decodeBencodeInt(bencodedValue.slice(currentIndex, endIndex))
-			);
-			currentIndex = endIndex;
-		} else if (!isNaN(bencodedValue[currentIndex])) {
-			const colonIndex = bencodedValue.indexOf(":", currentIndex);
-			const stringLength = parseInt(
-				bencodedValue.slice(currentIndex, colonIndex)
-			);
-			result.push(
-				decodeBencodeString(
-					bencodedValue.slice(colonIndex, colonIndex + stringLength + 1)
-				)
-			);
-			currentIndex = colonIndex + stringLength + 1;
-		} else if (bencodedValue[currentIndex] === "l") {
-			let endIndex = bencodedValue.lastIndexOf("e") - 1;
-
-			while (!isNaN(bencodedValue[endIndex - 1]) && endIndex > 0) {
-				endIndex = bencodedValue.lastIndexOf("e", endIndex - 1);
-			}
-
-			result.push(
-				decodeBencodeList(bencodedValue.slice(currentIndex, endIndex + 1))
-			);
-
-			currentIndex = endIndex + 1;
-		} else {
-			throw new Error(
-				"Only integers, strings and lists are supported at the moment"
-			);
-		}
-	}
-	return result;
-}
-
-function decodeBencodeInt(bencodedValue) {
-	if (
-		bencodedValue[0] === "i" &&
-		bencodedValue[bencodedValue.length - 1] === "e"
-	) {
-		return parseInt(bencodedValue.slice(1, -1));
-	} else {
-		throw new Error("Only integers are supported at the moment");
-	}
-}
-
-function decodeBencodeString(bencodedValue) {
-	const firstColonIndex = bencodedValue.indexOf(":");
-	if (firstColonIndex === -1) {
-		throw new Error("Invalid encoded value");
-	}
-	return bencodedValue.substr(firstColonIndex + 1);
 }
 
 module.exports = { decodeBencode };
