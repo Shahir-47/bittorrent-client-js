@@ -1,13 +1,14 @@
 const { magnetParse } = require("./magnet_parse");
 const { decodeBencode } = require("./decode_bencode");
+const { encodeBencode } = require("./encode_bencode");
 const { urlEncodeBytes } = require("./utility");
 const net = require("net");
 
 function createHandshakeMessage(infoHash, peerId) {
 	const buffer = Buffer.alloc(68);
-
 	buffer.writeUInt8(19, 0);
 	buffer.write("BitTorrent protocol", 1);
+
 	buffer[20] = 0x00;
 	buffer[21] = 0x00;
 	buffer[22] = 0x00;
@@ -19,6 +20,24 @@ function createHandshakeMessage(infoHash, peerId) {
 
 	Buffer.from(infoHash, "hex").copy(buffer, 28);
 	buffer.write(peerId, 48);
+	return buffer;
+}
+
+function createExtensionHandshake() {
+	const extensionData = {
+		m: {
+			ut_metadata: 1,
+		},
+	};
+
+	const bencodedData = encodeBencode(extensionData);
+	const messageLength = 4 + 1 + 1 + bencodedData.length;
+	const buffer = Buffer.alloc(messageLength);
+
+	buffer.writeUInt32BE(1 + 1 + bencodedData.length, 0);
+	buffer.writeUInt8(20, 4); // Extension message type
+	buffer.writeUInt8(0, 5); // Handshake type
+	Buffer.from(bencodedData).copy(buffer, 6);
 
 	return buffer;
 }
@@ -38,6 +57,10 @@ function parsePeerString(peers) {
 async function performPeerHandshake(peer, infoHash, myPeerId) {
 	return new Promise((resolve, reject) => {
 		const socket = new net.Socket();
+		let handshakeReceived = false;
+		let receivedPeerId = null;
+		let dataBuffer = Buffer.alloc(0);
+
 		const timeout = setTimeout(() => {
 			socket.destroy();
 			reject(new Error("Handshake timeout"));
@@ -50,15 +73,36 @@ async function performPeerHandshake(peer, infoHash, myPeerId) {
 		});
 
 		socket.connect(peer.port, peer.ip, () => {
+			// Send initial handshake
 			const handshakeMsg = createHandshakeMessage(infoHash, myPeerId);
 			socket.write(handshakeMsg);
 		});
 
 		socket.on("data", (data) => {
-			clearTimeout(timeout);
-			const receivedPeerId = data.slice(48, 68).toString("hex");
-			socket.destroy();
-			resolve(receivedPeerId);
+			// Append new data to our buffer
+			dataBuffer = Buffer.concat([dataBuffer, data]);
+
+			if (!handshakeReceived && dataBuffer.length >= 68) {
+				// Process the handshake response
+				receivedPeerId = dataBuffer.slice(48, 68).toString("hex");
+				handshakeReceived = true;
+				dataBuffer = dataBuffer.slice(68); // Removes handshake from buffer
+
+				// wait for bitfield message
+				return;
+			}
+
+			if (handshakeReceived && dataBuffer.length >= 4) {
+				// bit field received
+				// Send our extension handshake
+				const extensionHandshake = createExtensionHandshake();
+				socket.write(extensionHandshake);
+
+				// We can complete the handshake process
+				clearTimeout(timeout);
+				socket.destroy();
+				resolve(receivedPeerId);
+			}
 		});
 	});
 }
