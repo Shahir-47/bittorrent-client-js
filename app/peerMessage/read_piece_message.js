@@ -16,7 +16,6 @@ function readPieceMessage(socket, expectedPieceIndex, expectedOffset) {
 				// keep-alive
 				if (msgLength === 0) {
 					buffer = buffer.slice(4);
-					console.log("Got keep-alive, ignoring...");
 					continue;
 				}
 
@@ -39,21 +38,14 @@ function readPieceMessage(socket, expectedPieceIndex, expectedOffset) {
 
 					// If this is the piece/offset, resolve
 					if (pieceIndex === expectedPieceIndex && begin === expectedOffset) {
-						console.log(
-							`Got piece message for pieceIndex=${pieceIndex}, offset=${begin}, length=${blockData.length}`
-						);
 						foundBlock = true;
 						cleanup();
 						return resolve({ pieceIndex, begin, blockData });
 					} else {
-						console.log(
-							`Got piece (ID=7) but offset/pieceIndex mismatch: pIndex=${pieceIndex}, begin=${begin}`
-						);
 						// keep parsing the next message in the buffer
 						continue;
 					}
 				} else {
-					console.log(`Got message ID=${msgId} (not piece). Ignoring...`);
 				}
 			}
 		}

@@ -10,9 +10,6 @@ function sendRequest(socket, pieceIndex, begin, length) {
 	msg.writeUInt32BE(length, 13); // 4-byte "length"
 
 	socket.write(msg);
-	console.log(
-		`Requested piece=${pieceIndex}, begin=${begin}, length=${length} bytes`
-	);
 }
 
 module.exports = { sendRequest };

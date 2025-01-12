@@ -15,7 +15,6 @@ function waitForUnchoke(socket) {
 				if (msgLength === 0) {
 					// Keep-alive
 					buffer = buffer.slice(4);
-					console.log("Got keep-alive, ignoring...");
 					continue;
 				}
 
@@ -34,12 +33,8 @@ function waitForUnchoke(socket) {
 
 				if (msgId === 1) {
 					// unchoke
-					console.log("Got unchoke message (ID=1). Peer is now unchoking us!");
 					cleanup();
 					return resolve();
-				} else {
-					// ignore other messages for now, or log them
-					console.log("Got message ID=", msgId, " (not unchoke). Ignoring...");
 				}
 			}
 		}

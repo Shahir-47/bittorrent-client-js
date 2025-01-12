@@ -39,7 +39,6 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 		const socket = net.createConnection(
 			{ host: peerIp, port: peerPort },
 			() => {
-				console.log("Connected to peer:", peerIp, peerPort);
 				const handshakeMsg = buildHandshake(infoHash, myPeerId);
 				socket.write(handshakeMsg);
 			}
@@ -52,16 +51,7 @@ function doHandshake(peerIp, peerPort, infoHash, myPeerId) {
 
 			if (receivedData.length >= 68) {
 				const peerHandshake = receivedData.slice(0, 68);
-
-				const pstrlen = peerHandshake.readUInt8(0);
-				const pstr = peerHandshake.slice(1, 1 + pstrlen).toString("ascii");
-				const infoHashFromPeer = peerHandshake.slice(28, 48);
 				const peerIdFromPeer = peerHandshake.slice(48, 68);
-
-				console.log("Got handshake from peer!");
-				console.log("pstrlen:", pstrlen, "pstr:", pstr);
-				console.log("infoHash (hex):", infoHashFromPeer.toString("hex"));
-				console.log("peerId (hex):", peerIdFromPeer.toString("hex"));
 
 				receivedData = receivedData.slice(68);
 				cleanup();

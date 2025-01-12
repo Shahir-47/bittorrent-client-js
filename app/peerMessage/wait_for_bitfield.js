@@ -18,7 +18,6 @@ function waitForBitfield(socket) {
 				if (msgLength === 0) {
 					// Keep-alive
 					buffer = buffer.slice(4);
-					console.log("Got keep-alive, ignoring...");
 					continue;
 				}
 
@@ -37,17 +36,9 @@ function waitForBitfield(socket) {
 				const msgId = msg.readUInt8(0);
 
 				if (msgId === 5) {
-					console.log("Got bitfield (ID=5). Ignoring the payload for now.");
 					cleanup();
 					resolve();
 					return;
-				} else {
-					console.log(
-						"Got message ID=",
-						msgId,
-						"but not bitfield. Ignoring..."
-					);
-					// ignore and continue reading in the while loop
 				}
 			}
 		}
