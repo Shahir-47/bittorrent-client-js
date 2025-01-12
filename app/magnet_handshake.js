@@ -9,6 +9,7 @@ function createHandshakeMessage(infoHash, peerId) {
 	buffer.writeUInt8(19, 0);
 	buffer.write("BitTorrent protocol", 1);
 
+	// Set reserved bytes with extension support
 	buffer[20] = 0x00;
 	buffer[21] = 0x00;
 	buffer[22] = 0x00;
@@ -54,10 +55,28 @@ function parsePeerString(peers) {
 	return peerList;
 }
 
+function parseMessage(buffer) {
+	if (buffer.length < 4) return null;
+
+	const length = buffer.readUInt32BE(0);
+	if (buffer.length < 4 + length) return null;
+
+	const messageBuffer = buffer.slice(0, 4 + length);
+	const remainingBuffer = buffer.slice(4 + length);
+
+	return {
+		message: messageBuffer,
+		remaining: remainingBuffer,
+		length: length,
+	};
+}
+
 async function performPeerHandshake(peer, infoHash, myPeerId) {
 	return new Promise((resolve, reject) => {
 		const socket = new net.Socket();
 		let handshakeReceived = false;
+		let bitfieldReceived = false;
+		let extensionHandshakeReceived = false;
 		let receivedPeerId = null;
 		let dataBuffer = Buffer.alloc(0);
 
@@ -73,35 +92,42 @@ async function performPeerHandshake(peer, infoHash, myPeerId) {
 		});
 
 		socket.connect(peer.port, peer.ip, () => {
-			// Send initial handshake
 			const handshakeMsg = createHandshakeMessage(infoHash, myPeerId);
 			socket.write(handshakeMsg);
 		});
 
 		socket.on("data", (data) => {
-			// Append new data to our buffer
 			dataBuffer = Buffer.concat([dataBuffer, data]);
 
+			// Handle initial handshake
 			if (!handshakeReceived && dataBuffer.length >= 68) {
-				// Process the handshake response
 				receivedPeerId = dataBuffer.slice(48, 68).toString("hex");
 				handshakeReceived = true;
-				dataBuffer = dataBuffer.slice(68); // Removes handshake from buffer
-
-				// wait for bitfield message
+				dataBuffer = dataBuffer.slice(68);
 				return;
 			}
 
-			if (handshakeReceived && dataBuffer.length >= 4) {
-				// bit field received
-				// Send our extension handshake
-				const extensionHandshake = createExtensionHandshake();
-				socket.write(extensionHandshake);
+			// Process subsequent messages
+			while (dataBuffer.length >= 4) {
+				const message = parseMessage(dataBuffer);
+				if (!message) break;
 
-				// We can complete the handshake process
-				clearTimeout(timeout);
-				socket.destroy();
-				resolve(receivedPeerId);
+				dataBuffer = message.remaining;
+
+				if (!bitfieldReceived) {
+					// First message after handshake is bitfield
+					bitfieldReceived = true;
+					// Send our extension handshake
+					const extensionHandshake = createExtensionHandshake();
+					socket.write(extensionHandshake);
+				} else if (!extensionHandshakeReceived) {
+					// Next message should be extension handshake
+					extensionHandshakeReceived = true;
+					// Now we can complete the process
+					clearTimeout(timeout);
+					socket.destroy();
+					resolve(receivedPeerId);
+				}
 			}
 		});
 	});
