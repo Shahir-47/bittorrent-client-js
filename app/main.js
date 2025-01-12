@@ -7,6 +7,7 @@ const { getPeers } = require("./peers");
 const { sendHandshake } = require("./handshake");
 const { downloadPiece } = require("./download_piece");
 const { downloadComplete } = require("./download_complete");
+const { magnetParse } = require("./magnet_parse");
 
 function main() {
 	const command = process.argv[2];
@@ -74,6 +75,12 @@ function main() {
 			.catch((err) => {
 				console.error("Failed to download torrent:", err);
 			});
+	} else if (command === "magnet_parse") {
+		const magnetURI = process.argv[3];
+		const parsed = magnetParse(magnetURI);
+
+		console.log("Tracker URL:", parsed.trackerURL);
+		console.log("Info Hash:", parsed.infoHash);
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}
