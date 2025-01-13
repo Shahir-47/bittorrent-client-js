@@ -9,9 +9,9 @@ const { downloadPiece } = require("./torrent/download_piece");
 const { downloadComplete } = require("./torrent/download_complete");
 const { magnetParse } = require("./magnet/magnet_parse");
 const { performMagnetHandshake } = require("./magnet/peer_handshake");
-const { handleMagnetHandshake } = require("./magnet/old");
+const { downloadPieceFromMagnet } = require("./magnet/download_piece");
 
-function main() {
+async function main() {
 	const command = process.argv[2];
 
 	console.error("Logs from your program will appear here!");
@@ -90,6 +90,22 @@ function main() {
 		performMagnetHandshake(process.argv[3]).then(() => {
 			console.log("Metadata retrieval complete");
 		});
+	} else if (command === "magnet_download_piece") {
+		const outFlagIndex = process.argv.indexOf("-o");
+		if (outFlagIndex === -1) {
+			throw new Error("Must specify -o <output_file>");
+		}
+		const outFile = process.argv[outFlagIndex + 1];
+		const magnetLink = process.argv[outFlagIndex + 2];
+		const pieceIndex = Number(process.argv[outFlagIndex + 3]);
+
+		downloadPieceFromMagnet(magnetLink, pieceIndex, outFile)
+			.then(() => {
+				console.log(`Downloaded piece #${pieceIndex} to ${outFile}`);
+			})
+			.catch((err) => {
+				console.error("Failed to download piece:", err);
+			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}

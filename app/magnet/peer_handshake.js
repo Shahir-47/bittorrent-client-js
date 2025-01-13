@@ -1,5 +1,4 @@
 const { magnetParse } = require("./magnet_parse");
-const {} = require("./metadata_exchange");
 const { decodeBencode } = require("../bencode/decode_bencode");
 const {
 	urlEncodeBytes,
