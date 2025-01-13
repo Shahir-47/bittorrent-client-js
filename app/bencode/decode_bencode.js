@@ -92,4 +92,86 @@ function decodeBencode(bencodedValue) {
 	return result;
 }
 
-module.exports = { decodeBencode };
+function decodeBencodeWithLength(bencodedValue) {
+	let pos = 0;
+
+	function decodeNext() {
+		if (pos >= bencodedValue.length) {
+			throw new Error("Unexpected end of input");
+		}
+
+		const currentChar = bencodedValue[pos];
+
+		if (currentChar === "i") {
+			pos++; // Move past 'i'
+			const start = pos;
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				pos++;
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated integer");
+			}
+			const num = parseInt(bencodedValue.slice(start, pos));
+			pos++; // Move past 'e'
+			return num;
+		}
+
+		if (currentChar === "l") {
+			pos++; // Move past 'l'
+			const list = [];
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				list.push(decodeNext());
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated list");
+			}
+			pos++; // Move past 'e'
+			return list;
+		}
+
+		if (currentChar === "d") {
+			pos++; // Move past 'd'
+			const dict = {};
+			while (pos < bencodedValue.length && bencodedValue[pos] !== "e") {
+				const key = decodeNext();
+				if (typeof key !== "string") {
+					throw new Error("Dictionary key must be a string");
+				}
+				dict[key] = decodeNext();
+			}
+			if (pos >= bencodedValue.length) {
+				throw new Error("Unterminated dictionary");
+			}
+			pos++; // Move past 'e'
+			return dict;
+		}
+
+		if (!isNaN(currentChar)) {
+			const colonPos = bencodedValue.indexOf(":", pos);
+			if (colonPos === -1) {
+				throw new Error("Invalid string: no length delimiter");
+			}
+			const length = parseInt(bencodedValue.slice(pos, colonPos));
+			if (isNaN(length)) {
+				throw new Error("Invalid string length");
+			}
+			pos = colonPos + 1; // Move past ':'
+			const endPos = pos + length;
+			if (endPos > bencodedValue.length) {
+				throw new Error("String longer than remaining input");
+			}
+			const str = bencodedValue.slice(pos, endPos);
+			pos = endPos;
+			return str;
+		}
+
+		throw new Error(
+			`Invalid input character at position ${pos}: ${currentChar}`
+		);
+	}
+
+	const result = decodeNext();
+	return { dict: result, consumed: pos };
+}
+
+module.exports = { decodeBencode, decodeBencodeWithLength };

@@ -1,15 +1,15 @@
 const fs = require("fs");
 const crypto = require("crypto");
-const { decodeBencode } = require("./decode_bencode");
-const { encodeBencode } = require("./encode_bencode");
-const { calculateSHA1Hash } = require("./utility");
+const { decodeBencode } = require("../bencode/decode_bencode");
+const { encodeBencode } = require("../bencode/encode_bencode");
+const { calculateSHA1Hash } = require("../utility");
 const { doHandshake } = require("./handshake");
 const { getPeers } = require("./peers");
-const { waitForBitfield } = require("./peerMessage/wait_for_bitfield");
-const { sendInterested } = require("./peerMessage/send_interested");
-const { waitForUnchoke } = require("./peerMessage/wait_for_unchoke");
-const { sendRequest } = require("./peerMessage/send_request");
-const { readPieceMessage } = require("./peerMessage/read_piece_message");
+const { waitForBitfield } = require("../peerMessage/wait_for_bitfield");
+const { sendInterested } = require("../peerMessage/send_interested");
+const { waitForUnchoke } = require("../peerMessage/wait_for_unchoke");
+const { sendRequest } = require("../peerMessage/send_request");
+const { readPieceMessage } = require("../peerMessage/read_piece_message");
 
 async function downloadPiece(torrentPath, pieceIndex, outFile) {
 	// Read and parse torrent file

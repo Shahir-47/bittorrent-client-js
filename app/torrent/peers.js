@@ -1,6 +1,11 @@
-const { decodeBencode } = require("./decode_bencode");
-const { encodeBencode } = require("./encode_bencode");
-const { parsePeers, calculateSHA1Hash, urlEncodeBytes } = require("./utility");
+const { decodeBencode } = require("../bencode/decode_bencode");
+const { encodeBencode } = require("../bencode/encode_bencode");
+const {
+	parsePeers,
+	calculateSHA1Hash,
+	urlEncodeBytes,
+	generateRandomPeerId,
+} = require("../utility");
 
 async function getPeers(data) {
 	const bencodedValue = data.toString("binary");
@@ -8,7 +13,7 @@ async function getPeers(data) {
 
 	const infoHashRaw = calculateSHA1Hash(encodeBencode(info));
 	const infoHashEncoded = urlEncodeBytes(infoHashRaw);
-	const peerId = "-SS1000-123456789ABC";
+	const peerId = generateRandomPeerId();
 	const left = info.length;
 
 	let trackerUrl = announce;

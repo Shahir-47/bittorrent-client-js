@@ -1,14 +1,14 @@
 const process = require("process");
 const fs = require("fs");
 
-const { decodeBencode } = require("./decode_bencode");
-const { getInfo } = require("./info");
-const { getPeers } = require("./peers");
-const { sendHandshake } = require("./handshake");
-const { downloadPiece } = require("./download_piece");
-const { downloadComplete } = require("./download_complete");
-const { magnetParse } = require("./magnet_parse");
-const { handleMagnetHandshake } = require("./magnet_handshake");
+const { decodeBencode } = require("./bencode/decode_bencode");
+const { getInfo } = require("./torrent/info");
+const { getPeers } = require("./torrent/peers");
+const { sendHandshake } = require("./torrent/handshake");
+const { downloadPiece } = require("./torrent/download_piece");
+const { downloadComplete } = require("./torrent/download_complete");
+const { magnetParse } = require("./magnet/magnet_parse");
+const { performMagnetHandshake } = require("./magnet/peer_handshake");
 
 function main() {
 	const command = process.argv[2];
@@ -81,8 +81,14 @@ function main() {
 
 		console.log("Tracker URL:", parsed.trackerURL);
 		console.log("Info Hash:", parsed.infoHash);
-	} else if (command === "magnet_handshake") {
-		handleMagnetHandshake(process.argv[3]);
+	} else if (command === "magnet_handshake" || command === "magnet_info") {
+		try {
+			performMagnetHandshake(process.argv[3]).then(() => {
+				console.log("Handshake complete");
+			});
+		} catch (err) {
+			console.error("Failed to perform magnet handshake:", err);
+		}
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}

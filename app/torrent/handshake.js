@@ -2,9 +2,9 @@ const fs = require("fs");
 const crypto = require("crypto");
 const net = require("net");
 
-const { decodeBencode } = require("./decode_bencode");
-const { encodeBencode } = require("./encode_bencode");
-const { calculateSHA1Hash } = require("./utility");
+const { decodeBencode } = require("../bencode/decode_bencode");
+const { encodeBencode } = require("../bencode/encode_bencode");
+const { calculateSHA1Hash } = require("../utility");
 
 function sendHandshake(torrentPath, peerIp, peerPort) {
 	const data = fs.readFileSync(torrentPath);
