@@ -9,6 +9,7 @@ const { downloadPiece } = require("./torrent/download_piece");
 const { downloadComplete } = require("./torrent/download_complete");
 const { magnetParse } = require("./magnet/magnet_parse");
 const { performMagnetHandshake } = require("./magnet/peer_handshake");
+const { handleMagnetHandshake } = require("./magnet/old");
 
 function main() {
 	const command = process.argv[2];
@@ -81,14 +82,14 @@ function main() {
 
 		console.log("Tracker URL:", parsed.trackerURL);
 		console.log("Info Hash:", parsed.infoHash);
-	} else if (command === "magnet_handshake" || command === "magnet_info") {
-		try {
-			performMagnetHandshake(process.argv[3]).then(() => {
-				console.log("Handshake complete");
-			});
-		} catch (err) {
-			console.error("Failed to perform magnet handshake:", err);
-		}
+	} else if (command === "magnet_handshake") {
+		performMagnetHandshake(process.argv[3], true).then(() => {
+			console.log("Handshake complete");
+		});
+	} else if (command === "magnet_info") {
+		performMagnetHandshake(process.argv[3]).then(() => {
+			console.log("Metadata retrieval complete");
+		});
 	} else {
 		throw new Error(`Unknown command ${command}`);
 	}

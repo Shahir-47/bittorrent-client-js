@@ -17,7 +17,7 @@ const {
 	parseMetadataMessage,
 } = require("./metadata_exchange");
 
-async function communicateWithPeer(peer, infoHash, peerId) {
+async function communicateWithPeer(peer, infoHash, peerId, isHandshakeOnly) {
 	return new Promise((resolve, reject) => {
 		const socket = new net.Socket();
 		let dataBuffer = Buffer.alloc(0);
@@ -25,6 +25,7 @@ async function communicateWithPeer(peer, infoHash, peerId) {
 		let bitfieldReceived = false;
 		let extensionHandshakeReceived = false;
 		let metadataExtensionId = null;
+		let receivedPeerId = null;
 		let metadataRequestSent = false;
 		let supportsExtensions = false;
 
@@ -46,6 +47,7 @@ async function communicateWithPeer(peer, infoHash, peerId) {
 			if (!handshakeReceived && dataBuffer.length >= 68) {
 				console.log("Received initial handshake");
 				supportsExtensions = !!(dataBuffer[25] & 0x10);
+				receivedPeerId = dataBuffer.slice(48, 68).toString("hex");
 				handshakeReceived = true;
 				dataBuffer = dataBuffer.slice(68);
 
@@ -83,6 +85,22 @@ async function communicateWithPeer(peer, infoHash, peerId) {
 						console.log("Received extension handshake");
 						metadataExtensionId = parseExtensionHandshake(message);
 						extensionHandshakeReceived = true;
+
+						// end the connection if handshake only
+						if (isHandshakeOnly) {
+							console.log("Peer ID:", receivedPeerId);
+							console.log("Peer Metadata Extension ID:", metadataExtensionId);
+							clearTimeout(timeout);
+							socket.end();
+
+							setTimeout(() => {
+								socket.destroy();
+								console.log("Socket forcefully destroyed");
+							}, 1000);
+
+							resolve({ metadataExtensionId });
+							return;
+						}
 
 						// Send metadata request immediately after receiving extension handshake
 						console.log("Sending metadata request");
@@ -139,7 +157,7 @@ async function communicateWithPeer(peer, infoHash, peerId) {
 	});
 }
 
-async function performMagnetHandshake(magnetLink) {
+async function performMagnetHandshake(magnetLink, isHandshakeOnly = false) {
 	const parsedMagnet = magnetParse(magnetLink);
 	if (!parsedMagnet.trackerURL || !parsedMagnet.infoHash) {
 		throw new Error("Missing required magnet link parameters");
@@ -180,21 +198,24 @@ async function performMagnetHandshake(magnetLink) {
 		const data = await communicateWithPeer(
 			peers[0],
 			parsedMagnet.infoHash,
-			peerId
+			peerId,
+			isHandshakeOnly
 		);
 
-		// Format and print the output
-		console.log(`Tracker URL: ${parsedMagnet.trackerURL}`);
-		console.log(`Length: ${data.metadata.length}`);
-		console.log(`Info Hash: ${parsedMagnet.infoHash}`);
-		console.log(`Piece Length: ${data.metadata["piece length"]}`);
-		console.log("Piece Hashes:");
+		if (!isHandshakeOnly) {
+			// Format and print the output
+			console.log(`Tracker URL: ${parsedMagnet.trackerURL}`);
+			console.log(`Length: ${data.metadata.length}`);
+			console.log(`Info Hash: ${parsedMagnet.infoHash}`);
+			console.log(`Piece Length: ${data.metadata["piece length"]}`);
+			console.log("Piece Hashes:");
 
-		// Split piece hashes string into individual hashes
-		const pieceBuffer = Buffer.from(data.metadata.pieces, "binary");
-		for (let i = 0; i < pieceBuffer.length; i += 20) {
-			const hash = pieceBuffer.slice(i, i + 20).toString("hex");
-			console.log(hash);
+			// Split piece hashes string into individual hashes
+			const pieceBuffer = Buffer.from(data.metadata.pieces, "binary");
+			for (let i = 0; i < pieceBuffer.length; i += 20) {
+				const hash = pieceBuffer.slice(i, i + 20).toString("hex");
+				console.log(hash);
+			}
 		}
 
 		return data;
