@@ -154,7 +154,7 @@ Always replace `<output_directory/output_filename>` with the directory where you
 
 Substitute `<path/to/file.torrent>` with the real path to your `.torrent` file, `<piece_index>` with the zero-based index of the piece to download, and `<magnet_link>` with the actual magnet link.
 
-When choosing your output filename, pick something descriptive that will help you remember what the file contains. And critically, include the right file extension (like `.mp4`, `.jpg`, `.zip`, etc.) so your computer knows how to open it properly.
+When choosing your output filename, include the right file extension (like `.mp4`, `.jpg`, `.zip`, etc.) so your computer knows how to open it properly.
 
 ## Testing
 
