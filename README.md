@@ -30,6 +30,7 @@ This is an implementation of a BitTorrent client in JavaScript that supports dow
 The project is structured as follows:
 
 ```
+bittorrent-client-js/
 ├── README.md
 ├── codecrafters.yml
 ├── package.json
