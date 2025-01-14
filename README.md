@@ -136,9 +136,13 @@ Here are a few examples of downloading GIF files from magnet links to your curre
 
 ```bash
 ./your_bittorrent.sh magnet_download -o./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+```
 
+```bash
 ./your_bittorrent.sh magnet_download -o./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+```
 
+```bash
 ./your_bittorrent.sh magnet_download -o./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
 ```
 
