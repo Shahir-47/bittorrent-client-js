@@ -8,6 +8,7 @@ This is an implementation of a BitTorrent client in JavaScript that supports dow
 - [Project Structure](#project-structure)
 - [Implementation Details](#implementation-details)
 - [Limitations and Unsupported Features](#limitations-and-unsupported-features)
+- [Installation and Setup](#installation-and-setup)
 - [Usage](#usage)
 - [Testing](#testing)
 - [License](#license)
@@ -84,14 +85,59 @@ Please note the following limitations and unsupported features of this BitTorren
 - Seeding functionality is not implemented. The client can only download files and does not upload pieces to other peers.
 - DHT (Distributed Hash Table) and PEX (Peer Exchange) are not supported.
 
+## Installation and Setup
+
+To run this BitTorrent client on your machine:
+
+1. Ensure you have Node.js installed (version 12 or higher)
+2. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/bittorrent-client-js.git
+   ```
+   ```bash
+   cd bittorrent-client-js
+   ```
+3. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+4. Make the shell script executable:
+
+   ```bash
+   chmod +x your_bittorrent.sh
+   ```
+
+I'll reorganize the Usage section to group related commands together, starting with basic operations, then .torrent operations, and finally magnet operations:
+
 ## Usage
 
-To run the BitTorrent client, ensure you have Node.js installed. Then, execute the `your_bittorrent.sh` script with the appropriate command and arguments. Here are some examples:
+To run the BitTorrent client, ensure you have Node.js installed. Then, execute the `your_bittorrent.sh` script with the appropriate command and arguments. Here are all available commands:
+
+### Basic Operations
+
+- To decode a bencoded string:
+  ```
+  ./your_bittorrent.sh decode <bencoded_string>
+  ```
+  Try it with a simple bencoded string:
+  ```bash
+  $ ./your_bittorrent.sh decode "d3:bar4:spam3:fooi42ee"
+  ```
+
+### Torrent File Operations
 
 - To parse a `.torrent` file and print the tracker URL, info hash, piece length, and piece hashes:
 
   ```
   ./your_bittorrent.sh info <path/to/file.torrent>
+  ```
+
+  Try it yourself! Run this command to examine the `sample.torrent` file included in the repository:
+
+  ```bash
+  $ ./your_bittorrent.sh info sample.torrent
   ```
 
 - To discover peers for a `.torrent` file:
@@ -100,26 +146,93 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   ./your_bittorrent.sh peers <path/to/file.torrent>
   ```
 
+  Want to see the available peers? Try this for the `sample.torrent` file included in the repository:
+
+  ```bash
+  $ ./your_bittorrent.sh peers sample.torrent
+  ```
+
+- To perform a handshake with a specific peer:
+
+  ```
+  ./your_bittorrent.sh handshake <path/to/file.torrent> <peer_address>
+  ```
+
+  First get a peer address using the peers command, then try connecting to one:
+
+  ```bash
+  $ ./your_bittorrent.sh handshake sample.torrent 165.232.41.73:51556
+  ```
+
 - To download a single piece from a `.torrent` file:
 
   ```
   ./your_bittorrent.sh download_piece -o <output_directory/output_filename> <path/to/file.torrent> <piece_index>
   ```
 
-- To download the entire file from a `.torrent` file:
+  Try downloading a piece of the file pointed by the `sample.torrent` file included in the repository:
 
+  ```bash
+  $ ./your_bittorrent.sh download_piece -o ./test-piece sample.torrent 1
+  ```
+
+- To download the entire file from a `.torrent` file:
   ```
   ./your_bittorrent.sh download -o <output_directory/output_filename> <path/to/file.torrent>
   ```
+  Try downloading the file pointed out by the `sample.torrent` file included in the repository:
+  ```bash
+  $ ./your_bittorrent.sh download -o ./test sample.torrent
+  ```
 
-  The `-o` flag specifies the output path for the downloaded file. Provide the directory path where you want to save the file, followed by the desired output filename including the appropriate file extension.
-
-  For example: `-o ./downloads/mytorrentfile.mp4`
+### Magnet Link Operations
 
 - To parse a magnet link and print the info hash and tracker URL:
 
   ```
   ./your_bittorrent.sh magnet_parse <magnet_link>
+  ```
+
+  Try parsing one of our test magnet links:
+
+  ```bash
+  $ ./your_bittorrent.sh magnet_parse "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
+
+- To perform a handshake using a magnet link:
+
+  ```
+  ./your_bittorrent.sh magnet_handshake <magnet_link>
+  ```
+
+  Try it with one of our test magnet links:
+
+  ```bash
+  $ ./your_bittorrent.sh magnet_handshake "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
+
+- To retrieve metadata from a magnet link:
+
+  ```
+  ./your_bittorrent.sh magnet_info <magnet_link>
+  ```
+
+  Try getting info from one of our test magnet links:
+
+  ```bash
+  $ ./your_bittorrent.sh magnet_info "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
+
+- To download a specific piece from a magnet link:
+
+  ```
+  ./your_bittorrent.sh magnet_download_piece -o <output_directory/output_filename> <magnet_link> <piece_index>
+  ```
+
+  Try downloading piece #1 from one of our test magnet links:
+
+  ```bash
+  $ ./your_bittorrent.sh magnet_download_piece -o ./test-piece "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce" 1
   ```
 
 - To download the entire file from a magnet link:
@@ -128,33 +241,26 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   ./your_bittorrent.sh magnet_download -o <output_directory/output_filename> <magnet_link>
   ```
 
-  Similar to downloading from a `.torrent` file, use the `-o` flag to specify the output directory path and the desired filename with the correct extension for the file you're downloading from the magnet link.
+  Here are a few examples of downloading GIF files from magnet links to your current directory:
 
-  For example: `-o ./downloads/mymagnetfile.mp3`
+  ```bash
+  ./your_bittorrent.sh magnet_download -o./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
 
-Here are a few examples of downloading GIF files from magnet links to your current directory:
+  ```bash
+  ./your_bittorrent.sh magnet_download -o./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
 
-```bash
-./your_bittorrent.sh magnet_download -o./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-```
+  ```bash
+  ./your_bittorrent.sh magnet_download -o./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ```
 
-```bash
-./your_bittorrent.sh magnet_download -o./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-```
+### Important Notes
 
-```bash
-./your_bittorrent.sh magnet_download -o./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-```
-
-In these examples, the `-o` flag is immediately followed by `./` to indicate the current directory, and then the desired output filename with the `.gif` extension. This naming matches the file type being downloaded from these particular magnet links.
-
-It's crucial to remember that you must provide a filename, not just a directory path, after the `-o` flag. If you only specify a directory like `-o./`, the download will fail because no filename was given.
-
-Always replace `<output_directory/output_filename>` with the directory where you want the file saved and the exact filename you want it to have, including the proper file extension.
-
-Substitute `<path/to/file.torrent>` with the real path to your `.torrent` file, `<piece_index>` with the zero-based index of the piece to download, and `<magnet_link>` with the actual magnet link.
-
-When choosing your output filename, include the right file extension (like `.mp4`, `.jpg`, `.zip`, etc.) so your computer knows how to open it properly.
+- When using the `-o` flag, you must provide a filename, not just a directory path. If you only specify a directory like `-o./`, the download will fail because no filename was given.
+- Always replace `<output_directory/output_filename>` with the directory where you want the file saved and the exact filename you want it to have.
+- When downloading binary files (images, videos, etc.), include the appropriate file extension (like `.mp4`, `.jpg`, `.zip`, etc.) so your computer knows how to open it properly.
+- For text files, the extension is optional. If you don't provide one, the file will be saved without an extension.
 
 ## Testing
 
