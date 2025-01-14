@@ -91,26 +91,30 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
 - To parse a `.torrent` file and print the tracker URL, info hash, piece length, and piece hashes:
 
   ```
-  ./your_bittorrent.sh info sample.torrent
+  ./your_bittorrent.sh info <path/to/file.torrent>
   ```
 
 - To discover peers for a `.torrent` file:
 
   ```
-  ./your_bittorrent.sh peers sample.torrent
+  ./your_bittorrent.sh peers <path/to/file.torrent>
   ```
 
 - To download a single piece from a `.torrent` file:
 
   ```
-  ./your_bittorrent.sh download_piece -o /tmp/test-piece sample.torrent <piece_index>
+  ./your_bittorrent.sh download_piece -o <output_directory/output_filename> <path/to/file.torrent> <piece_index>
   ```
 
 - To download the entire file from a `.torrent` file:
 
   ```
-  ./your_bittorrent.sh download -o /tmp/test.txt sample.torrent
+  ./your_bittorrent.sh download -o <output_directory/output_filename> <path/to/file.torrent>
   ```
+
+  The `-o` flag specifies the output path for the downloaded file. Provide the directory path where you want to save the file, followed by the desired output filename including the appropriate file extension.
+
+  For example: `-o ./downloads/mytorrentfile.mp4`
 
 - To parse a magnet link and print the info hash and tracker URL:
 
@@ -119,27 +123,34 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   ```
 
 - To download the entire file from a magnet link:
+
   ```
-  ./your_bittorrent.sh magnet_download -o /path/to/output/file.ext <magnet_link>
+  ./your_bittorrent.sh magnet_download -o <output_directory/output_filename> <magnet_link>
   ```
 
-For example, you can download a GIF file using these magnet links. Try it yourself and see:
+  Similar to downloading from a `.torrent` file, use the `-o` flag to specify the output directory path and the desired filename with the correct extension for the file you're downloading from the magnet link.
+
+  For example: `-o ./downloads/mymagnetfile.mp3`
+
+Here are a few examples of downloading GIF files from magnet links to your current directory:
 
 ```bash
-./your_bittorrent.sh magnet_download -o ./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+./your_bittorrent.sh magnet_download -o./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+
+./your_bittorrent.sh magnet_download -o./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+
+./your_bittorrent.sh magnet_download -o./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
 ```
 
-```bash
-./your_bittorrent.sh magnet_download -o ./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-```
+In these examples, the `-o` flag is immediately followed by `./` to indicate the current directory, and then the desired output filename with the `.gif` extension. This naming matches the file type being downloaded from these particular magnet links.
 
-```bash
-./your_bittorrent.sh magnet_download -o ./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
-```
+It's crucial to remember that you must provide a filename, not just a directory path, after the `-o` flag. If you only specify a directory like `-o./`, the download will fail because no filename was given.
 
-Note that the output file path and extension should match the expected file type. In the examples above, the output files have the `.gif` extension since the magnet links are for GIF files.
+Always replace `<output_directory/output_filename>` with the directory where you want the file saved and the exact filename you want it to have, including the proper file extension.
 
-Replace `sample.torrent` with the path to your `.torrent` file, `<piece_index>` with the zero-based index of the piece you want to download, `/path/to/output/file.ext` with the desired output file path and extension, and `<magnet_link>` with the actual magnet link.
+Substitute `<path/to/file.torrent>` with the real path to your `.torrent` file, `<piece_index>` with the zero-based index of the piece to download, and `<magnet_link>` with the actual magnet link.
+
+When choosing your output filename, pick something descriptive that will help you remember what the file contains. And critically, include the right file extension (like `.mp4`, `.jpg`, `.zip`, etc.) so your computer knows how to open it properly.
 
 ## Testing
 
