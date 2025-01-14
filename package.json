@@ -1,15 +1,20 @@
 {
-    "name": "@codecrafters/build-your-own-bittorrent",
-    "version": "1.0.0",
-    "description": "Build your own Bittorrent challenge, from CodeCrafters",
-    "main": "main.js",
-    "scripts": {
-        "dev": "node app/main.js"
-    },
-    "keywords": [
-        "build-your-own-x"
-    ],
-    "author": "",
-    "license": "MIT",
-    "dependencies": {}
+	"name": "bittorrent-client",
+	"version": "1.0.0",
+	"description": "A BitTorrent client implementation supporting both .torrent files and magnet links",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node app/main.js"
+	},
+	"keywords": [
+		"bittorrent",
+		"torrent",
+		"magnet",
+		"p2p",
+		"peer-to-peer",
+		"file-sharing"
+	],
+	"author": "Shahir Ahmed <shahirahmed30@gmail.com>",
+	"license": "MIT",
+	"dependencies": {}
 }

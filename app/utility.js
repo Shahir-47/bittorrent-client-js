@@ -1,4 +1,14 @@
 const crypto = require("crypto");
+const net = require("net");
+const { decodeBencode } = require("./bencode/decode_bencode");
+const {
+	createExtensionHandshake,
+	parseExtensionHandshake,
+} = require("./magnet/extension_handshake");
+const {
+	createMetadataRequestMessage,
+	parseMetadataMessage,
+} = require("./magnet/metadata_exchange");
 
 function parsePeers(peersBinary) {
 	const peers = [];
@@ -76,6 +86,112 @@ function generateRandomPeerId() {
 	return prefix + randomPart;
 }
 
+async function getPeersFromTracker(
+	trackerUrl,
+	infoHashEncoded,
+	peerId,
+	fileSize
+) {
+	const url =
+		`${trackerUrl}${trackerUrl.includes("?") ? "&" : "?"}` +
+		`info_hash=${infoHashEncoded}&peer_id=${peerId}&port=6881` +
+		`&uploaded=0&downloaded=0&left=${fileSize}&compact=1`;
+
+	const response = await fetch(url);
+	const buffer = await response.arrayBuffer();
+	const trackerResponse = decodeBencode(Buffer.from(buffer).toString("binary"));
+	return parsePeerString(trackerResponse.peers || "");
+}
+
+async function connectToPeer(peer, infoHash, peerId) {
+	const socket = new net.Socket();
+	await new Promise((resolve, reject) => {
+		socket.connect(peer.port, peer.ip, resolve);
+		socket.on("error", reject);
+	});
+	socket.write(createHandshakeMessage(infoHash, peerId));
+	return socket;
+}
+
+function verifyPieceHash(pieceBuffer, pieceHashes, pieceIndex) {
+	const expectedHashBinary = pieceHashes.slice(
+		pieceIndex * 20,
+		pieceIndex * 20 + 20
+	);
+	const expectedHashHex = Buffer.from(expectedHashBinary, "binary").toString(
+		"hex"
+	);
+	const actualHashHex = crypto
+		.createHash("sha1")
+		.update(pieceBuffer)
+		.digest("hex");
+
+	if (actualHashHex !== expectedHashHex) {
+		throw new Error("Piece hash mismatch");
+	}
+}
+
+async function getMetadataFromPeer(socket) {
+	return new Promise((resolve, reject) => {
+		let dataBuffer = Buffer.alloc(0);
+		let state = {
+			handshakeReceived: false,
+			bitfieldReceived: false,
+			extensionHandshakeReceived: false,
+			metadataExtensionId: null,
+			metadataRequestSent: false,
+		};
+
+		socket.on("data", (data) => {
+			dataBuffer = Buffer.concat([dataBuffer, data]);
+			dataBuffer = processMessages(dataBuffer, state, socket, resolve);
+		});
+		socket.on("error", reject);
+	});
+}
+
+function processMessages(buffer, state, socket, resolve) {
+	let dataBuffer = buffer;
+	if (!state.handshakeReceived && dataBuffer.length >= 68) {
+		if (!(dataBuffer[25] & 0x10))
+			throw new Error("Peer doesn't support extensions");
+		state.handshakeReceived = true;
+		dataBuffer = dataBuffer.slice(68);
+	}
+
+	while (dataBuffer.length >= 4) {
+		const messageLength = dataBuffer.readUInt32BE(0);
+		if (dataBuffer.length < messageLength + 4) break;
+
+		const message = dataBuffer.slice(0, messageLength + 4);
+		dataBuffer = dataBuffer.slice(messageLength + 4);
+
+		if (messageLength === 0) continue;
+		handleMessage(message, state, socket, resolve);
+	}
+	return dataBuffer;
+}
+
+function handleMessage(message, state, socket, resolve) {
+	if (!state.bitfieldReceived && message[4] === 5) {
+		state.bitfieldReceived = true;
+		socket.write(createExtensionHandshake());
+		return;
+	}
+
+	if (message[4] === 20) {
+		if (!state.extensionHandshakeReceived) {
+			state.metadataExtensionId = parseExtensionHandshake(message);
+			state.extensionHandshakeReceived = true;
+			socket.write(createMetadataRequestMessage(state.metadataExtensionId));
+			state.metadataRequestSent = true;
+		} else if (state.metadataRequestSent) {
+			const result = parseMetadataMessage(message);
+			resolve(result.metadata);
+		}
+	}
+}
+
 module.exports = {
 	parsePeers,
 	parsePeerString,
@@ -83,4 +199,10 @@ module.exports = {
 	urlEncodeBytes,
 	createHandshakeMessage,
 	generateRandomPeerId,
+	getPeersFromTracker,
+	connectToPeer,
+	verifyPieceHash,
+	getMetadataFromPeer,
+	processMessages,
+	handleMessage,
 };

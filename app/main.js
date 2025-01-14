@@ -10,6 +10,7 @@ const { downloadComplete } = require("./torrent/download_complete");
 const { magnetParse } = require("./magnet/magnet_parse");
 const { performMagnetHandshake } = require("./magnet/peer_handshake");
 const { downloadPieceFromMagnet } = require("./magnet/download_piece");
+const { downloadCompleteFromMagnet } = require("./magnet/download_complete");
 
 async function main() {
 	const command = process.argv[2];
@@ -105,6 +106,21 @@ async function main() {
 			})
 			.catch((err) => {
 				console.error("Failed to download piece:", err);
+			});
+	} else if (command === "magnet_download") {
+		const outFlagIndex = process.argv.indexOf("-o");
+		if (outFlagIndex === -1) {
+			throw new Error("Must specify -o <output_file>");
+		}
+		const outFile = process.argv[outFlagIndex + 1];
+		const magnetLink = process.argv[outFlagIndex + 2];
+
+		downloadCompleteFromMagnet(magnetLink, outFile)
+			.then(() => {
+				console.log(`Downloaded magnet link to ${outFile}`);
+			})
+			.catch((err) => {
+				console.error("Failed to download magnet link:", err);
 			});
 	} else {
 		throw new Error(`Unknown command ${command}`);
