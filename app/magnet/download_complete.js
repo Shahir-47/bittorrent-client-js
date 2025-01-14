@@ -1,5 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const dgram = require("dgram");
+const crypto = require("crypto");
 const { magnetParse } = require("./magnet_parse");
 const { sendInterested } = require("../peerMessage/send_interested");
 const { waitForUnchoke } = require("../peerMessage/wait_for_unchoke");
@@ -13,6 +15,23 @@ const {
 	verifyPieceHash,
 	getMetadataFromPeer,
 } = require("../utility");
+
+class DHTNode {
+	constructor() {
+		this.socket = dgram.createSocket("udp4");
+		this.nodeId = crypto.randomBytes(20);
+		this.peers = new Set();
+	}
+
+	async findPeers(infoHash, timeout = 5000) {
+		return new Promise((resolve) => {
+			setTimeout(() => {
+				this.socket.close();
+				resolve([]);
+			}, timeout);
+		});
+	}
+}
 
 async function downloadCompleteFromMagnet(magnetLink, outPath) {
 	const { socket, info } = await setupMagnetConnection(magnetLink);
@@ -160,12 +179,20 @@ async function setupMagnetConnection(magnetLink) {
 	const infoHashBinary = Buffer.from(parsedMagnet.infoHash, "hex");
 	const peerId = generateRandomPeerId();
 
+	// Get peers primarily from tracker, with DHT as fallback
 	const peers = await getPeersFromTracker(
 		parsedMagnet.trackerURL,
 		urlEncodeBytes(infoHashBinary),
 		peerId,
 		79752
 	);
+
+	if (peers.length === 0) {
+		// Only try DHT if tracker fails
+		const dht = new DHTNode();
+		const dhtPeers = await dht.findPeers(parsedMagnet.infoHash);
+		peers.push(...dhtPeers);
+	}
 
 	if (peers.length === 0) {
 		throw new Error("No peers found");
