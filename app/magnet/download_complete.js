@@ -1,4 +1,5 @@
 const fs = require("fs");
+const path = require("path");
 const { magnetParse } = require("./magnet_parse");
 const { sendInterested } = require("../peerMessage/send_interested");
 const { waitForUnchoke } = require("../peerMessage/wait_for_unchoke");
@@ -13,98 +14,114 @@ const {
 	getMetadataFromPeer,
 } = require("../utility");
 
-async function downloadCompleteFromMagnet(magnetLink, outFile) {
-	// Get initial connection and metadata
+async function downloadCompleteFromMagnet(magnetLink, outPath) {
 	const { socket, info } = await setupMagnetConnection(magnetLink);
 
 	try {
-		// Send interested and wait for unchoke
 		sendInterested(socket);
 		await waitForUnchoke(socket);
 
-		// Calculate total pieces
-		const pieceLength = info["piece length"];
-		const totalLength = info.length;
-		const numPieces = Math.ceil(totalLength / pieceLength);
-		const completeFile = Buffer.alloc(totalLength);
-
-		// Download pieces sequentially
-		const BLOCK_SIZE = 16 * 1024;
-		const PIPELINE_SIZE = 10;
-
-		for (let pieceIndex = 0; pieceIndex < numPieces; pieceIndex++) {
-			const isLastPiece = pieceIndex === numPieces - 1;
-			const currentPieceLength = isLastPiece
-				? totalLength - pieceLength * (numPieces - 1)
-				: pieceLength;
-
-			const pieceBuffer = Buffer.alloc(currentPieceLength);
-			await downloadPiece(
-				socket,
-				pieceIndex,
-				pieceBuffer,
-				currentPieceLength,
-				BLOCK_SIZE,
-				PIPELINE_SIZE
-			);
-			verifyPieceHash(pieceBuffer, info.pieces, pieceIndex);
-
-			// Copy piece to final buffer and log progress
-			pieceBuffer.copy(completeFile, pieceIndex * pieceLength);
-			console.log(`Downloaded piece ${pieceIndex}/${numPieces - 1}`);
+		if (info.files) {
+			await downloadMultipleFiles(socket, info, outPath);
+		} else {
+			await downloadSingleFile(socket, info, outPath);
 		}
-
-		fs.writeFileSync(outFile, completeFile);
 	} finally {
 		socket.destroy();
 	}
 }
 
-async function setupMagnetConnection(magnetLink) {
-	const parsedMagnet = magnetParse(magnetLink);
-	const infoHashBinary = Buffer.from(parsedMagnet.infoHash, "hex");
-	const peerId = generateRandomPeerId();
+async function downloadMultipleFiles(socket, info, outDir) {
+	let offset = 0;
+	fs.mkdirSync(outDir, { recursive: true });
 
-	// Get peers from tracker
-	const peers = await getPeersFromTracker(
-		parsedMagnet.trackerURL,
-		urlEncodeBytes(infoHashBinary),
-		peerId,
-		79752
-	);
+	for (const file of info.files) {
+		const filePath = path.join(outDir, ...file.path);
+		fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
-	if (peers.length === 0) {
-		throw new Error("No peers found");
+		const startPiece = Math.floor(offset / info["piece length"]);
+		const endPiece = Math.floor(
+			(offset + file.length - 1) / info["piece length"]
+		);
+
+		const fileBuffer = await downloadPiecesRange(
+			socket,
+			info,
+			startPiece,
+			endPiece,
+			offset % info["piece length"],
+			file.length
+		);
+
+		fs.writeFileSync(filePath, fileBuffer);
+		offset += file.length;
 	}
-
-	// Try to connect to peers
-	for (let i = 0; i < Math.min(3, peers.length); i++) {
-		try {
-			const socket = await connectToPeer(
-				peers[i],
-				parsedMagnet.infoHash,
-				peerId
-			);
-			const info = await getMetadataFromPeer(socket);
-			socket.setMaxListeners(20);
-			return { socket, info };
-		} catch (error) {
-			console.error(`Failed with peer ${i}:`, error.message);
-			continue;
-		}
-	}
-	throw new Error("Failed to connect to any peers");
 }
 
-async function downloadPiece(
+async function downloadSingleFile(socket, info, outFile) {
+	const pieceLength = info["piece length"];
+	const totalLength = info.length;
+	const numPieces = Math.ceil(totalLength / pieceLength);
+
+	const fileBuffer = await downloadPiecesRange(
+		socket,
+		info,
+		0,
+		numPieces - 1,
+		0,
+		totalLength
+	);
+
+	fs.writeFileSync(outFile, fileBuffer);
+}
+
+async function downloadPiecesRange(
 	socket,
-	pieceIndex,
-	pieceBuffer,
-	pieceLength,
-	BLOCK_SIZE,
-	PIPELINE_SIZE
+	info,
+	startPiece,
+	endPiece,
+	startOffset,
+	length
 ) {
+	const fileBuffer = Buffer.alloc(length);
+	let fileOffset = 0;
+
+	for (let pieceIndex = startPiece; pieceIndex <= endPiece; pieceIndex++) {
+		const pieceLength = info["piece length"];
+		const isLastPiece = pieceIndex === Math.floor(info.length / pieceLength);
+		const currentPieceLength = isLastPiece
+			? info.length - pieceLength * Math.floor(info.length / pieceLength)
+			: pieceLength;
+
+		const pieceBuffer = Buffer.alloc(currentPieceLength);
+		await downloadPiece(socket, pieceIndex, pieceBuffer, currentPieceLength);
+		verifyPieceHash(pieceBuffer, info.pieces, pieceIndex);
+
+		const pieceStart = pieceIndex === startPiece ? startOffset : 0;
+		const pieceContribution = Math.min(
+			pieceBuffer.length - pieceStart,
+			length - fileOffset
+		);
+
+		pieceBuffer.copy(
+			fileBuffer,
+			fileOffset,
+			pieceStart,
+			pieceStart + pieceContribution
+		);
+		fileOffset += pieceContribution;
+
+		console.log(`Downloaded piece ${pieceIndex}/${endPiece}`);
+	}
+
+	return fileBuffer;
+}
+
+async function downloadPiece(socket, pieceIndex, pieceBuffer, pieceLength) {
+	const BLOCK_SIZE = 16 * 1024;
+	const PIPELINE_SIZE = 10;
 	let offset = 0;
+
 	while (offset < pieceLength) {
 		const promises = [];
 		const blockCount = Math.min(
@@ -112,7 +129,6 @@ async function downloadPiece(
 			Math.ceil((pieceLength - offset) / BLOCK_SIZE)
 		);
 
-		// Send all requests in the pipeline
 		for (let i = 0; i < blockCount; i++) {
 			const begin = offset + i * BLOCK_SIZE;
 			const size = Math.min(BLOCK_SIZE, pieceLength - begin);
@@ -137,6 +153,41 @@ async function downloadPiece(
 
 		offset += BLOCK_SIZE * blockCount;
 	}
+}
+
+async function setupMagnetConnection(magnetLink) {
+	const parsedMagnet = magnetParse(magnetLink);
+	const infoHashBinary = Buffer.from(parsedMagnet.infoHash, "hex");
+	const peerId = generateRandomPeerId();
+
+	const peers = await getPeersFromTracker(
+		parsedMagnet.trackerURL,
+		urlEncodeBytes(infoHashBinary),
+		peerId,
+		79752
+	);
+
+	if (peers.length === 0) {
+		throw new Error("No peers found");
+	}
+
+	for (let i = 0; i < Math.min(3, peers.length); i++) {
+		try {
+			const socket = await connectToPeer(
+				peers[i],
+				parsedMagnet.infoHash,
+				peerId
+			);
+			socket.setMaxListeners(20);
+			const info = await getMetadataFromPeer(socket);
+			return { socket, info };
+		} catch (error) {
+			console.error(`Failed with peer ${i}:`, error.message);
+			continue;
+		}
+	}
+
+	throw new Error("Failed to connect to any peers");
 }
 
 module.exports = { downloadCompleteFromMagnet };
