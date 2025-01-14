@@ -16,6 +16,50 @@ const {
 	getMetadataFromPeer,
 } = require("../utility");
 
+class PeerRanking {
+	constructor() {
+		this.peerScores = new Map();
+		this.downloadTimes = new Map();
+	}
+
+	startPieceDownload(peerId, pieceIndex) {
+		this.downloadTimes.set(`${peerId}-${pieceIndex}`, Date.now());
+	}
+
+	endPieceDownload(peerId, pieceIndex, success) {
+		const startTime = this.downloadTimes.get(`${peerId}-${pieceIndex}`);
+		if (!startTime) return;
+
+		const duration = Date.now() - startTime;
+		let score = this.peerScores.get(peerId) || { speed: 0, failures: 0 };
+
+		if (success) {
+			// Update speed (lower duration is better)
+			const newSpeed = 1000 / duration; // Normalize to speed per second
+			score.speed = score.speed * 0.7 + newSpeed * 0.3; // Weighted average
+		} else {
+			score.failures++;
+		}
+
+		this.peerScores.set(peerId, score);
+		this.downloadTimes.delete(`${peerId}-${pieceIndex}`);
+	}
+
+	getPeerScore(peerId) {
+		const score = this.peerScores.get(peerId);
+		if (!score) return 0;
+		return score.speed / (1 + score.failures);
+	}
+
+	rankPeers(peers) {
+		return peers.sort((a, b) => {
+			const scoreA = this.getPeerScore(a);
+			const scoreB = this.getPeerScore(b);
+			return scoreB - scoreA;
+		});
+	}
+}
+
 class DHTNode {
 	constructor() {
 		this.socket = dgram.createSocket("udp4");
@@ -34,23 +78,23 @@ class DHTNode {
 }
 
 async function downloadCompleteFromMagnet(magnetLink, outPath) {
-	const { socket, info } = await setupMagnetConnection(magnetLink);
+	const { socket, info, peerRanking } = await setupMagnetConnection(magnetLink);
 
 	try {
 		sendInterested(socket);
 		await waitForUnchoke(socket);
 
 		if (info.files) {
-			await downloadMultipleFiles(socket, info, outPath);
+			await downloadMultipleFiles(socket, info, outPath, peerRanking);
 		} else {
-			await downloadSingleFile(socket, info, outPath);
+			await downloadSingleFile(socket, info, outPath, peerRanking);
 		}
 	} finally {
 		socket.destroy();
 	}
 }
 
-async function downloadMultipleFiles(socket, info, outDir) {
+async function downloadMultipleFiles(socket, info, outDir, peerRanking) {
 	let offset = 0;
 	fs.mkdirSync(outDir, { recursive: true });
 
@@ -69,7 +113,8 @@ async function downloadMultipleFiles(socket, info, outDir) {
 			startPiece,
 			endPiece,
 			offset % info["piece length"],
-			file.length
+			file.length,
+			peerRanking
 		);
 
 		fs.writeFileSync(filePath, fileBuffer);
@@ -77,7 +122,7 @@ async function downloadMultipleFiles(socket, info, outDir) {
 	}
 }
 
-async function downloadSingleFile(socket, info, outFile) {
+async function downloadSingleFile(socket, info, outFile, peerRanking) {
 	const pieceLength = info["piece length"];
 	const totalLength = info.length;
 	const numPieces = Math.ceil(totalLength / pieceLength);
@@ -88,7 +133,8 @@ async function downloadSingleFile(socket, info, outFile) {
 		0,
 		numPieces - 1,
 		0,
-		totalLength
+		totalLength,
+		peerRanking
 	);
 
 	fs.writeFileSync(outFile, fileBuffer);
@@ -100,7 +146,8 @@ async function downloadPiecesRange(
 	startPiece,
 	endPiece,
 	startOffset,
-	length
+	length,
+	peerRanking
 ) {
 	const fileBuffer = Buffer.alloc(length);
 	let fileOffset = 0;
@@ -113,7 +160,13 @@ async function downloadPiecesRange(
 			: pieceLength;
 
 		const pieceBuffer = Buffer.alloc(currentPieceLength);
-		await downloadPiece(socket, pieceIndex, pieceBuffer, currentPieceLength);
+		await downloadPiece(
+			socket,
+			pieceIndex,
+			pieceBuffer,
+			currentPieceLength,
+			peerRanking
+		);
 		verifyPieceHash(pieceBuffer, info.pieces, pieceIndex);
 
 		const pieceStart = pieceIndex === startPiece ? startOffset : 0;
@@ -136,10 +189,20 @@ async function downloadPiecesRange(
 	return fileBuffer;
 }
 
-async function downloadPiece(socket, pieceIndex, pieceBuffer, pieceLength) {
+async function downloadPiece(
+	socket,
+	pieceIndex,
+	pieceBuffer,
+	pieceLength,
+	peerRanking
+) {
 	const BLOCK_SIZE = 16 * 1024;
 	const PIPELINE_SIZE = 10;
 	let offset = 0;
+
+	if (peerRanking) {
+		peerRanking.startPieceDownload(socket.remoteAddress, pieceIndex);
+	}
 
 	while (offset < pieceLength) {
 		const promises = [];
@@ -163,7 +226,13 @@ async function downloadPiece(socket, pieceIndex, pieceBuffer, pieceLength) {
 
 		try {
 			await Promise.all(promises);
+			if (peerRanking) {
+				peerRanking.endPieceDownload(socket.remoteAddress, pieceIndex, true);
+			}
 		} catch (error) {
+			if (peerRanking) {
+				peerRanking.endPieceDownload(socket.remoteAddress, pieceIndex, false);
+			}
 			console.error(
 				`Failed to download blocks at offset ${offset}, retrying...`
 			);
@@ -178,6 +247,7 @@ async function setupMagnetConnection(magnetLink) {
 	const parsedMagnet = magnetParse(magnetLink);
 	const infoHashBinary = Buffer.from(parsedMagnet.infoHash, "hex");
 	const peerId = generateRandomPeerId();
+	const peerRanking = new PeerRanking();
 
 	// Get peers primarily from tracker, with DHT as fallback
 	const peers = await getPeersFromTracker(
@@ -198,16 +268,19 @@ async function setupMagnetConnection(magnetLink) {
 		throw new Error("No peers found");
 	}
 
-	for (let i = 0; i < Math.min(3, peers.length); i++) {
+	// Sort peers by ranking if we have previous performance data
+	const rankedPeers = peerRanking.rankPeers(peers);
+
+	for (let i = 0; i < Math.min(3, rankedPeers.length); i++) {
 		try {
 			const socket = await connectToPeer(
-				peers[i],
+				rankedPeers[i],
 				parsedMagnet.infoHash,
 				peerId
 			);
 			socket.setMaxListeners(20);
 			const info = await getMetadataFromPeer(socket);
-			return { socket, info };
+			return { socket, info, peerRanking };
 		} catch (error) {
 			console.error(`Failed with peer ${i}:`, error.message);
 			continue;
