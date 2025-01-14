@@ -51,24 +51,22 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 
 	try {
 		// Set socket timeout
-		socket.setTimeout(8000); // 8 second timeout
+		socket.setTimeout(30000); // 8 second timeout
 
 		// Initial handshake sequence
-		await Promise.race([
-			waitForBitfield(socket),
-			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("Bitfield timeout")), 2000)
-			),
-		]);
+		try {
+			await Promise.race([
+				waitForBitfield(socket),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("Bitfield timeout")), 2000)
+				),
+			]);
+		} catch (error) {
+			console.log("No bitfield received, continuing anyway");
+		}
 
 		await sendInterested(socket);
-
-		await Promise.race([
-			waitForUnchoke(socket),
-			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("Unchoke timeout")), 2000)
-			),
-		]);
+		await waitForUnchoke(socket);
 
 		// Calculate piece parameters
 		const pieceLength = info["piece length"];
@@ -80,7 +78,6 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 
 		const pieceBuffer = Buffer.alloc(actualPieceLength);
 		const BLOCK_SIZE = 16 * 1024;
-		const PIPELINE_SIZE = 5;
 
 		// Create blocks array
 		const blocks = [];
@@ -92,38 +89,46 @@ async function downloadPiece(torrentPath, pieceIndex, outFile) {
 		}
 
 		// Download blocks with retries
+		const PIPELINE_SIZE = 5;
 		let completedBlocks = 0;
-		while (completedBlocks < blocks.length) {
-			const activeRequests = [];
+		let retryCount = 0;
+		const MAX_RETRIES = 3;
 
-			// Fill the pipeline
-			while (
-				activeRequests.length < PIPELINE_SIZE &&
-				completedBlocks + activeRequests.length < blocks.length
-			) {
-				const block = blocks[completedBlocks + activeRequests.length];
-				sendRequest(socket, pieceIndex, block.offset, block.size);
-
-				const requestPromise = Promise.race([
-					readPieceMessage(socket, pieceIndex, block.offset),
-					new Promise((_, reject) =>
-						setTimeout(() => reject(new Error("Block timeout")), 2000)
-					),
-				]).then((response) => {
-					response.blockData.copy(pieceBuffer, response.begin);
-					return response;
-				});
-
-				activeRequests.push(requestPromise);
-			}
-
+		while (completedBlocks < blocks.length && retryCount < MAX_RETRIES) {
 			try {
+				const activeRequests = [];
+				const remainingBlocks = Math.min(
+					PIPELINE_SIZE,
+					blocks.length - completedBlocks
+				);
+
+				for (let i = 0; i < remainingBlocks; i++) {
+					const block = blocks[completedBlocks + i];
+					sendRequest(socket, pieceIndex, block.offset, block.size);
+					activeRequests.push(
+						readPieceMessage(socket, pieceIndex, block.offset).then(
+							(response) => {
+								response.blockData.copy(pieceBuffer, response.begin);
+								return response;
+							}
+						)
+					);
+				}
+
 				await Promise.all(activeRequests);
-				completedBlocks += activeRequests.length;
+				completedBlocks += remainingBlocks;
+				retryCount = 0; // Reset retry count on success
 			} catch (error) {
-				// retry the failed blocks in the next iteration
-				console.error("Block download failed, retrying:", error.message);
+				console.error(
+					`Download attempt ${retryCount + 1} failed: ${error.message}`
+				);
+				retryCount++;
+				await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait before retry
 			}
+		}
+
+		if (completedBlocks < blocks.length) {
+			throw new Error("Failed to download piece after maximum retries");
 		}
 
 		// Verify hash

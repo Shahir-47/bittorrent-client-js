@@ -12,57 +12,98 @@ const { sendRequest } = require("../peerMessage/send_request");
 const { readPieceMessage } = require("../peerMessage/read_piece_message");
 
 async function downloadComplete(torrentPath, outFile) {
-	// Read and parse torrent file
-	const data = fs.readFileSync(torrentPath);
-	const bencodedValue = data.toString("binary");
-	const { info } = decodeBencode(bencodedValue);
-
-	const totalLength = info.length;
-	const pieceLength = info["piece length"];
-	const numPieces = Math.ceil(totalLength / pieceLength);
-
-	// Create our output file buffer
-	const completeFile = Buffer.alloc(totalLength);
-
-	// Get peers from tracker
-	const peers = await getPeers(data);
-	if (!peers.length) {
-		throw new Error("No peers found");
-	}
-
-	// Try to establish connection with first peer
-	const [peerIp, peerPort] = peers[0].split(":");
-	const infoHash = calculateSHA1Hash(encodeBencode(info));
-	const myPeerId = crypto.randomBytes(20);
-
-	const { socket } = await doHandshake(
-		peerIp,
-		Number(peerPort),
-		infoHash,
-		myPeerId
-	);
+	let socket = null;
+	let downloadSuccess = false;
 
 	try {
-		// Initial connection sequence with 2 second timeouts
-		await Promise.race([
-			waitForBitfield(socket),
+		// parse the torrent file
+		const data = fs.readFileSync(torrentPath);
+		const bencodedValue = data.toString("binary");
+		const { info } = decodeBencode(bencodedValue);
+
+		const totalLength = info.length;
+		const pieceLength = info["piece length"];
+		const numPieces = Math.ceil(totalLength / pieceLength);
+		const completeFile = Buffer.alloc(totalLength);
+
+		// find peers
+		const peers = await Promise.race([
+			getPeers(data),
 			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("Bitfield timeout")), 2000)
+				setTimeout(() => reject(new Error("Peer discovery timeout")), 10000)
 			),
 		]);
 
-		await sendInterested(socket);
+		if (!peers?.length) {
+			throw new Error("No peers found from tracker");
+		}
 
+		// Try connecting to peers until we find one that works
+		for (let i = 0; i < Math.min(5, peers.length); i++) {
+			const [peerIp, peerPort] = peers[i].split(":");
+			const infoHash = calculateSHA1Hash(encodeBencode(info));
+			const myPeerId = crypto.randomBytes(20);
+
+			try {
+				// Attempt handshake with timeout
+				const result = await Promise.race([
+					doHandshake(peerIp, Number(peerPort), infoHash, myPeerId),
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error("Handshake timeout")), 5000)
+					),
+				]);
+				socket = result.socket;
+
+				// setting up socket event handlers once - this prevents memory leaks
+				socket.setMaxListeners(20);
+				socket.once("error", (error) => {
+					console.error(`Socket error: ${error.message}`);
+				});
+				socket.once("timeout", () => {
+					console.error("Socket timeout occurred");
+					socket.destroy();
+				});
+				socket.setTimeout(30000);
+
+				break;
+			} catch (error) {
+				console.error(
+					`Failed to connect to peer ${peerIp}:${peerPort}: ${error.message}`
+				);
+				if (socket) {
+					socket.destroy();
+					socket = null;
+				}
+			}
+		}
+
+		if (!socket) {
+			throw new Error("Failed to connect to any peers");
+		}
+
+		// Handle the optional bitfield message
+		try {
+			await Promise.race([
+				waitForBitfield(socket),
+				new Promise((resolve) => setTimeout(resolve, 2000)),
+			]);
+		} catch {
+			console.log("No bitfield received, continuing");
+		}
+
+		// Essential protocol messages
+		await sendInterested(socket);
 		await Promise.race([
 			waitForUnchoke(socket),
 			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error("Unchoke timeout")), 2000)
+				setTimeout(() => reject(new Error("Unchoke timeout")), 5000)
 			),
 		]);
 
-		// Download pieces sequentially with pipelining
+		// Download pieces sequentially
 		const BLOCK_SIZE = 16 * 1024;
 		const PIPELINE_SIZE = 10;
+		const MAX_BLOCK_RETRIES = 3;
 
 		for (let pieceIndex = 0; pieceIndex < numPieces; pieceIndex++) {
 			const isLastPiece = pieceIndex === numPieces - 1;
@@ -73,49 +114,71 @@ async function downloadComplete(torrentPath, outFile) {
 			const pieceBuffer = Buffer.alloc(currentPieceLength);
 			let offset = 0;
 
-			// Download blocks with pipelining
 			while (offset < currentPieceLength) {
-				const promises = [];
-				const blockCount = Math.min(
-					PIPELINE_SIZE,
-					Math.ceil((currentPieceLength - offset) / BLOCK_SIZE)
-				);
+				let retryCount = 0;
+				let success = false;
 
-				// Send all requests in the pipeline immediately
-				for (let i = 0; i < blockCount; i++) {
-					const begin = offset + i * BLOCK_SIZE;
-					const size = Math.min(BLOCK_SIZE, currentPieceLength - begin);
+				while (!success && retryCount < MAX_BLOCK_RETRIES) {
+					try {
+						const promises = [];
+						const blockCount = Math.min(
+							PIPELINE_SIZE,
+							Math.ceil((currentPieceLength - offset) / BLOCK_SIZE)
+						);
 
-					// Send request without waiting
-					sendRequest(socket, pieceIndex, begin, size);
+						// Request all blocks in the current pipeline
+						for (let i = 0; i < blockCount; i++) {
+							const begin = offset + i * BLOCK_SIZE;
+							const size = Math.min(BLOCK_SIZE, currentPieceLength - begin);
+							sendRequest(socket, pieceIndex, begin, size);
 
-					// Create promise for response with timeout
-					const blockPromise = Promise.race([
-						readPieceMessage(socket, pieceIndex, begin),
-						new Promise((_, reject) =>
-							setTimeout(() => reject(new Error("Block timeout")), 1000)
-						),
-					]);
+							// Each readPieceMessage gets its own error handler
+							const blockPromise = readPieceMessage(
+								socket,
+								pieceIndex,
+								begin
+							).catch((error) => {
+								throw new Error(`Block read failed: ${error.message}`);
+							});
 
-					promises.push(blockPromise);
+							promises.push(blockPromise);
+						}
+
+						const responses = await Promise.race([
+							Promise.all(promises),
+							new Promise((_, reject) =>
+								setTimeout(
+									() => reject(new Error("Block batch timeout")),
+									10000
+								)
+							),
+						]);
+
+						for (const response of responses) {
+							response.blockData.copy(pieceBuffer, response.begin);
+						}
+
+						offset += BLOCK_SIZE * blockCount;
+						success = true;
+					} catch (error) {
+						retryCount++;
+						if (socket.destroyed) {
+							throw new Error("Socket disconnected");
+						}
+						await new Promise((resolve) =>
+							setTimeout(resolve, 1000 * retryCount)
+						);
+					}
 				}
 
-				// Wait for all blocks in this pipeline batch
-				const responses = await Promise.all(promises).catch(async (error) => {
-					// On error, wait briefly and retry the whole batch
-					await new Promise((resolve) => setTimeout(resolve, 100));
-					throw error;
-				});
-
-				// Process responses
-				for (const { blockData, begin } of responses) {
-					blockData.copy(pieceBuffer, begin);
+				if (!success) {
+					throw new Error(
+						`Failed to download piece ${pieceIndex} after ${MAX_BLOCK_RETRIES} attempts`
+					);
 				}
-
-				offset += BLOCK_SIZE * promises.length;
 			}
 
-			// Verify piece hash
+			// Verify the piece hash
 			const expectedHashBinary = info.pieces.slice(
 				pieceIndex * 20,
 				pieceIndex * 20 + 20
@@ -130,19 +193,41 @@ async function downloadComplete(torrentPath, outFile) {
 				.digest("hex");
 
 			if (actualHashHex !== expectedHashHex) {
-				throw new Error(`Piece ${pieceIndex} hash mismatch`);
+				throw new Error(`Piece ${pieceIndex} hash verification failed`);
 			}
 
-			// Copy piece to final buffer and log progress
 			pieceBuffer.copy(completeFile, pieceIndex * pieceLength);
-			console.log(`Downloaded piece ${pieceIndex}`);
+			console.log(
+				`Successfully downloaded piece ${pieceIndex}/${
+					numPieces - 1
+				} (${Math.round(((pieceIndex + 1) / numPieces) * 100)}%)`
+			);
 		}
 
-		// Write the complete file
 		fs.writeFileSync(outFile, completeFile);
+		console.log(`Download complete! File saved to ${outFile}`);
+		downloadSuccess = true;
 	} finally {
-		socket.end();
-		socket.destroy();
+		// Clean up resources
+		if (socket) {
+			socket.removeAllListeners();
+			socket.end();
+			socket.destroy();
+			socket = null;
+		}
+
+		if (!downloadSuccess && outFile) {
+			try {
+				fs.unlinkSync(outFile);
+			} catch {
+				// Ignore cleanup errors
+			}
+		}
+
+		// exit
+		process.nextTick(() => {
+			process.exit(0);
+		});
 	}
 }
 
