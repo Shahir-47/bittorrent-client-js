@@ -123,7 +123,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   ```
   Try it with a simple bencoded string:
   ```bash
-  $ ./your_bittorrent.sh decode "d3:bar4:spam3:fooi42ee"
+  ./your_bittorrent.sh decode "d3:bar4:spam3:fooi42ee"
   ```
 
 ### Torrent File Operations
@@ -137,7 +137,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try it yourself! Run this command to examine the `sample.torrent` file included in the repository:
 
   ```bash
-  $ ./your_bittorrent.sh info sample.torrent
+  ./your_bittorrent.sh info sample.torrent
   ```
 
 - To discover peers for a `.torrent` file:
@@ -149,7 +149,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Want to see the available peers? Try this for the `sample.torrent` file included in the repository:
 
   ```bash
-  $ ./your_bittorrent.sh peers sample.torrent
+  ./your_bittorrent.sh peers sample.torrent
   ```
 
 - To perform a handshake with a specific peer:
@@ -161,7 +161,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   First get a peer address using the peers command, then try connecting to one:
 
   ```bash
-  $ ./your_bittorrent.sh handshake sample.torrent 165.232.41.73:51556
+  ./your_bittorrent.sh handshake sample.torrent 165.232.41.73:51556
   ```
 
 - To download a single piece from a `.torrent` file:
@@ -173,7 +173,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try downloading a piece of the file pointed by the `sample.torrent` file included in the repository:
 
   ```bash
-  $ ./your_bittorrent.sh download_piece -o ./test-piece sample.torrent 1
+  ./your_bittorrent.sh download_piece -o ./test-piece sample.torrent 1
   ```
 
 - To download the entire file from a `.torrent` file:
@@ -182,7 +182,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   ```
   Try downloading the file pointed out by the `sample.torrent` file included in the repository:
   ```bash
-  $ ./your_bittorrent.sh download -o ./test sample.torrent
+  ./your_bittorrent.sh download -o ./test sample.torrent
   ```
 
 ### Magnet Link Operations
@@ -196,7 +196,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try parsing one of our test magnet links:
 
   ```bash
-  $ ./your_bittorrent.sh magnet_parse "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_parse "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
 - To perform a handshake using a magnet link:
@@ -208,7 +208,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try it with one of our test magnet links:
 
   ```bash
-  $ ./your_bittorrent.sh magnet_handshake "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_handshake "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
 - To retrieve metadata from a magnet link:
@@ -220,7 +220,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try getting info from one of our test magnet links:
 
   ```bash
-  $ ./your_bittorrent.sh magnet_info "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_info "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
 - To download a specific piece from a magnet link:
@@ -232,7 +232,7 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Try downloading piece #1 from one of our test magnet links:
 
   ```bash
-  $ ./your_bittorrent.sh magnet_download_piece -o ./test-piece "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce" 1
+  ./your_bittorrent.sh magnet_download_piece -o ./test-piece "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce" 1
   ```
 
 - To download the entire file from a magnet link:
@@ -244,15 +244,15 @@ To run the BitTorrent client, ensure you have Node.js installed. Then, execute t
   Here are a few examples of downloading GIF files from magnet links to your current directory:
 
   ```bash
-  ./your_bittorrent.sh magnet_download -o./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_download -o ./test1.gif "magnet:?xt=urn:btih:ad42ce8109f54c99613ce38f9b4d87e70f24a165&dn=magnet1.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
   ```bash
-  ./your_bittorrent.sh magnet_download -o./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_download -o ./test2.gif "magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
   ```bash
-  ./your_bittorrent.sh magnet_download -o./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
+  ./your_bittorrent.sh magnet_download -o ./test3.gif "magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce"
   ```
 
 ### Important Notes
