@@ -1,5 +1,3 @@
-const net = require("net");
-
 function waitForBitfield(socket) {
 	return new Promise((resolve, reject) => {
 		let buffer = Buffer.alloc(0);
@@ -35,7 +33,7 @@ function waitForBitfield(socket) {
 				// The first byte of 'msg' is the message ID
 				const msgId = msg.readUInt8(0);
 
-				if (msgId === 5) {
+				if (msgId === 5 || msgId === 1) {
 					cleanup();
 					resolve();
 					return;

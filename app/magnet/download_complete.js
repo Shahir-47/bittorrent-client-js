@@ -86,6 +86,7 @@ async function setupMagnetConnection(magnetLink) {
 				peerId
 			);
 			const info = await getMetadataFromPeer(socket);
+			socket.setMaxListeners(20);
 			return { socket, info };
 		} catch (error) {
 			console.error(`Failed with peer ${i}:`, error.message);
